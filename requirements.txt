@@ -1,0 +1,21 @@
+# Python dependencies for the ME paper image-analysis pipeline.
+# Versions pinned to those detected in the working environment (2026-07).
+# Note: several install names differ from their import names —
+#   cv2 -> opencv-python, PIL -> Pillow, skimage -> scikit-image,
+#   sklearn -> scikit-learn, dateutil -> python-dateutil.
+# The rest of the imports (pathlib, re, os, shutil, gc, glob, math,
+# collections, xml.etree, datetime) are Python standard library.
+
+numpy==2.4.1
+opencv-python==4.13.0.90
+Pillow==12.1.0
+matplotlib==3.10.8
+scipy==1.17.0
+scikit-image==0.26.0
+psutil==7.2.1
+python-dateutil==2.9.0.post0
+
+# Used for DBSCAN by:
+#   segmentation_corrections/colour_segmentation_correction_v2.py
+#   segmentation_checks/colour_segmentation_error_analysis_v3.py
+scikit-learn==1.9.0
