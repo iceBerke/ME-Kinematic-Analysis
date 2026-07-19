@@ -52,15 +52,15 @@ before detection); real-world units are applied only at the conversion stage.
 | # | Stage | Script |
 |---|-------|--------|
 | 1 | Track segmentation | `segmentation/track_segmentation_v4.py` |
-| 2 | Track PNG → NPY masks | `segmentation/colour_segmentation_npy_conversion_v1.py` |
-| 3 | Blob detection | `blob_detection/colour_segmentation_blob_detection_v3_memory_optimized.py` |
+| 2 | Track PNG → NPY masks | `segmentation/npy_conversion_v1.py` |
+| 3 | Blob detection | `blob_detection/blob_detection_v3_memory_optimized.py` |
 | 4 | MHI–track–blob alignment | `alignment_2/…_blob_mhi_tracks_alignment_v5.py` |
-| 5 | Acquisition frequency | `frame_rate/colour_segmentation_frame_rate_v1.py` |
+| 5 | Acquisition frequency | `frame_rate/frame_rate_v1.py` |
 | 6 | Pixel→µm / frame→s conversion | `alignment_2/…_time_coordinates_conversions_v3.py` |
 | 7 | Kinematic parameter extraction | `alignment_2/…_final_kin_param_extraction_v4.py` |
 
 Tune blob-detection parameters per experiment with
-`blob_detection/colour_segmentation_blob_parameters_check_v3.py` (single-image visual
+`blob_detection/blob_parameters_check_v3.py` (single-image visual
 check) before running stage 3.
 
 ### Two alignment branches
