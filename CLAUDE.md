@@ -13,7 +13,8 @@ Environment note: paths in the scripts are Linux (`/media/general-max-riekeles/M
 ## Running
 
 ```bash
-python blob_detection_ME_complete.py   # edit root_directory at the bottom first
+# each script is run directly; edit its hard-coded root_directory at the bottom first
+python blob_detection/blob_detection_v3_memory_optimized.py
 ```
 
 Dependencies are in `requirements.txt` (`pip install -r requirements.txt`): `opencv-python` (imported as `cv2`/`cv`), `numpy`, `scipy`, `scikit-image` (`skimage`), `scikit-learn` (`sklearn`), `matplotlib`, `Pillow` (`PIL`), `psutil`, `python-dateutil`. `scikit-learn` is used only for DBSCAN in `segmentation_corrections/correction_v2` and `segmentation_checks/error_analysis_v3`.
