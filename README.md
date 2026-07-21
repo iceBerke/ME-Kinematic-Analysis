@@ -57,7 +57,8 @@ before detection); real-world units are applied only at the conversion stage.
 | 4 | MHI–track–blob alignment | `alignment_2/…_blob_mhi_tracks_alignment_v5.py` |
 | 5 | Acquisition frequency | `frame_rate/frame_rate_v1.py` |
 | 6 | Pixel→µm / frame→s conversion | `alignment_2/…_time_coordinates_conversions_v3.py` |
-| 7 | Kinematic parameter extraction | `alignment_2/…_final_kin_param_extraction_v4.py` |
+| 7a | Per-track kinematic metrics | `kinematics/extract_track_metrics.py` |
+| 7b | Group summary statistics | `kinematics/summarize_track_metrics.py` |
 
 Tune blob-detection parameters per experiment with
 `blob_detection/blob_parameters_check_v3.py` (single-image visual
@@ -76,6 +77,12 @@ Stages 4, 6 and 7 exist in two parallel branches that differ only in **timing**:
 Each branch is a self-contained sequence: align → overlay (visualisation) → convert →
 overlay-collect → kinematics.
 
+Stage 7 is the exception: the two branch scripts have been replaced by the shared
+`kinematics/` folder, where a single `BRANCH = "corrected" | "uncorrected"` constant
+selects which converted-results folder to read and which results folder to write.
+The superseded `alignment_1/…_v3.py` / `alignment_2/…_v4.py` remain in place until the
+new scripts have been validated on the full dataset.
+
 ## Repository structure
 
 ```
@@ -84,6 +91,7 @@ blob_detection/           Stage 3 + tuning, inspection, and cleanup helpers
 frame_rate/               Stage 5: acquisition frequency (shared by both branches)
 alignment_1/              Uncorrected timing branch (stages 4, 6, 7 + visualisation)
 alignment_2/              Corrected timing branch (canonical; stages 4, 6, 7 + visualisation)
+kinematics/               Stage 7, split into metrics / grouping / two runnable stages
 segmentation_checks/      Batch QA of segmentation output (fragmentation / multi-track)
 segmentation_corrections/ Manual per-image track fix-ups (split / merge)
 utils/                    MHI file-management helpers
