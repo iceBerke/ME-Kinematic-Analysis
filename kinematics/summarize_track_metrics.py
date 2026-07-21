@@ -9,13 +9,15 @@
 #
 # This step touches no .npy files, so grouping rules, track filters and the
 # report layout can be iterated in seconds without re-running the expensive
-# extraction pass.
+# extraction pass. extract_track_metrics.py already runs it at the end of a
+# full analysis; run it on its own only to re-summarize existing CSVs.
+#
+# Settings (branch, root directory, track filters) come from kin_config.py.
 #
 # Input:  <root>/processed_results[_2]/<experiment>_processed_results.csv
 # Output: <root>/processed_results[_2]/<experiment>_summary_statistics.txt
 #
 import csv
-from pathlib import Path
 
 from kin_grouping import SUMMARY_METRIC_ORDER, group_tracks, write_summary_file
 
@@ -109,30 +111,10 @@ def main(results_dir, title_suffix="", extra_note="", min_total_time_s=0.0, min_
 
 
 if __name__ == "__main__":
-    # --- CONFIGURATION ---------------------------------------------------
-    # Root directory containing the processed_results[_2] folder
-    ROOT_DATA_DIR = Path("/media/general-max-riekeles/MMT_3/ME/Analysis_20_09")  # Update this path
+    # All settings live in kin_config.py - edit that file, not this one.
+    import kin_config as cfg
 
-    # Must match the BRANCH used in extract_track_metrics.py
-    BRANCH = "corrected"
-
-    # Track filters applied before grouping. Defaults are no-ops and reproduce
-    # the old scripts exactly; raise them to exclude short/immobile tracks.
-    MIN_TOTAL_TIME_S = 0.0
-    MIN_DIRECTION_CHANGES = None
-
-    if BRANCH == "corrected":
-        RESULTS_DIR_NAME = "processed_results_2"
-        TITLE_SUFFIX = " - TEMPORALLY CORRECTED DATA"
-        EXTRA_NOTE = "NOTE: Analysis performed on temporally corrected data with MHI-adjusted timepoints"
-    elif BRANCH == "uncorrected":
-        RESULTS_DIR_NAME = "processed_results"
-        TITLE_SUFFIX = ""
-        EXTRA_NOTE = ""
-    else:
-        raise ValueError(f"BRANCH must be 'corrected' or 'uncorrected', got {BRANCH!r}")
-    # ---------------------------------------------------------------------
-
-    main(ROOT_DATA_DIR / RESULTS_DIR_NAME,
-         title_suffix=TITLE_SUFFIX, extra_note=EXTRA_NOTE,
-         min_total_time_s=MIN_TOTAL_TIME_S, min_direction_changes=MIN_DIRECTION_CHANGES)
+    branch = cfg.settings()
+    main(branch["results_dir"],
+         title_suffix=branch["title_suffix"], extra_note=branch["extra_note"],
+         min_total_time_s=cfg.MIN_TOTAL_TIME_S, min_direction_changes=cfg.MIN_DIRECTION_CHANGES)

@@ -7,13 +7,16 @@
 # and writes one CSV per experiment subfolder into the results directory.
 #
 # This is the expensive pass (it reads every track file). The grouping and
-# summary statistics are a separate, cheap step: summarize_track_metrics.py,
-# which reads only the CSVs written here.
+# summary statistics are a separate, cheap step (summarize_track_metrics.py,
+# which reads only the CSVs written here) and run automatically at the end
+# unless kin_config.SUMMARIZE_AFTER_EXTRACTION is turned off.
 #
-# BRANCH SELECTION - this one script replaces both of the old scripts:
+# THIS IS THE SCRIPT TO RUN for a full kinematic analysis:
+#     cd kinematics && python extract_track_metrics.py
+# All settings - including which branch to analyse - are in kin_config.py.
+# One script replaces both of the old ones:
 #   alignment_1/final_kin_param_extraction_v3.py -> BRANCH = "uncorrected"
 #   alignment_2/final_kin_param_extraction_v4.py -> BRANCH = "corrected"   (canonical)
-# See the configuration block at the bottom of this file.
 #
 # Expected folder structure (mirrors the rest of the pipeline):
 # root_directory/
@@ -34,10 +37,9 @@
 #
 import numpy as np
 from collections import defaultdict
-from pathlib import Path
 
 from kin_grouping import extract_sample_group
-from kin_metrics import DEFAULT_PARAMS, compute_track_metrics
+from kin_metrics import compute_track_metrics
 
 # CSV columns written per track. Shortened_Dir and Experimental_Condition are
 # new relative to the old v3/v4 CSVs - summarize_track_metrics.py groups on them,
@@ -206,33 +208,22 @@ def main(root_data_dir, input_subdir, results_dir_name, params, banner=None):
         print(f"  {subfolder_name}: {sessions} sessions, {processed} processed, {failed} failed")
 
     print(f"\nResults saved in: {processed_results_dir}")
-    print("Run summarize_track_metrics.py on this folder to produce the summary statistics.")
 
 
 if __name__ == "__main__":
-    # --- CONFIGURATION ---------------------------------------------------
-    # Root directory containing the segmentation_output folder
-    ROOT_DATA_DIR = Path("/media/general-max-riekeles/MMT_3/ME/Analysis_20_09")  # Update this path
+    # All settings live in kin_config.py - edit that file, not this one.
+    import kin_config as cfg
 
-    # "corrected"   -> alignment_2 branch: MHI-corrected timepoints (canonical)
-    # "uncorrected" -> alignment_1 branch: original detection timepoints
-    BRANCH = "corrected"
+    branch = cfg.settings()
+    main(cfg.ROOT_DATA_DIR, branch["input_subdir"], branch["results_dir_name"],
+         cfg.PARAMS, banner=branch["banner"])
 
-    # Analysis parameters; see kin_metrics.DEFAULT_PARAMS for the full list.
-    PARAMS = dict(DEFAULT_PARAMS)
-    # PARAMS["MAX_SPEED"] = 60
-    # PARAMS["SMOOTHING_WINDOW"] = 1
-
-    if BRANCH == "corrected":
-        INPUT_SUBDIR = "alignment_converted_results_2"
-        RESULTS_DIR_NAME = "processed_results_2"
-        BANNER = "Processing temporally corrected tracking data from alignment_converted_results_2/ folders"
-    elif BRANCH == "uncorrected":
-        INPUT_SUBDIR = "alignment_converted_results"
-        RESULTS_DIR_NAME = "processed_results"
-        BANNER = "Processing uncorrected tracking data from alignment_converted_results/ folders"
+    if cfg.SUMMARIZE_AFTER_EXTRACTION:
+        print()
+        import summarize_track_metrics
+        summarize_track_metrics.main(
+            branch["results_dir"],
+            title_suffix=branch["title_suffix"], extra_note=branch["extra_note"],
+            min_total_time_s=cfg.MIN_TOTAL_TIME_S, min_direction_changes=cfg.MIN_DIRECTION_CHANGES)
     else:
-        raise ValueError(f"BRANCH must be 'corrected' or 'uncorrected', got {BRANCH!r}")
-    # ---------------------------------------------------------------------
-
-    main(ROOT_DATA_DIR, INPUT_SUBDIR, RESULTS_DIR_NAME, PARAMS, banner=BANNER)
+        print("Run summarize_track_metrics.py to produce the summary statistics.")

@@ -57,8 +57,7 @@ before detection); real-world units are applied only at the conversion stage.
 | 4 | MHI–track–blob alignment | `alignment_2/…_blob_mhi_tracks_alignment_v5.py` |
 | 5 | Acquisition frequency | `frame_rate/frame_rate_v1.py` |
 | 6 | Pixel→µm / frame→s conversion | `alignment_2/…_time_coordinates_conversions_v3.py` |
-| 7a | Per-track kinematic metrics | `kinematics/extract_track_metrics.py` |
-| 7b | Group summary statistics | `kinematics/summarize_track_metrics.py` |
+| 7 | Kinematic parameter extraction | `kinematics/extract_track_metrics.py` (runs the summary too) |
 
 Tune blob-detection parameters per experiment with
 `blob_detection/blob_parameters_check_v3.py` (single-image visual
@@ -78,10 +77,20 @@ Each branch is a self-contained sequence: align → overlay (visualisation) → 
 overlay-collect → kinematics.
 
 Stage 7 is the exception: the two branch scripts have been replaced by the shared
-`kinematics/` folder, where a single `BRANCH = "corrected" | "uncorrected"` constant
-selects which converted-results folder to read and which results folder to write.
-The superseded `alignment_1/…_v3.py` / `alignment_2/…_v4.py` remain in place until the
-new scripts have been validated on the full dataset.
+`kinematics/` folder. It is also the only stage not configured by editing the script
+itself — set `ROOT_DATA_DIR` and `BRANCH` once in `kinematics/kin_config.py`, then:
+
+```bash
+cd kinematics
+python extract_track_metrics.py     # per-track CSVs, then the summary statistics
+python summarize_track_metrics.py   # optional: re-summarize existing CSVs only
+```
+
+`BRANCH = "corrected"` reproduces the old `alignment_2/…_v4.py`, `"uncorrected"` the old
+`alignment_1/…_v3.py`; the two write to `processed_results_2/` and `processed_results/`
+respectively, so both can be produced without overwriting each other. The superseded
+`alignment_1/…_v3.py` / `alignment_2/…_v4.py` remain in place until the new scripts have
+been validated on the full dataset.
 
 ## Repository structure
 
