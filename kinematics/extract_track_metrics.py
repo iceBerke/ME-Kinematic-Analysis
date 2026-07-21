@@ -211,19 +211,30 @@ def main(root_data_dir, input_subdir, results_dir_name, params, banner=None):
 
 
 if __name__ == "__main__":
-    # All settings live in kin_config.py - edit that file, not this one.
+    # The root directory and branch are asked for (or given on the command line);
+    # the analysis settings come from kin_config.py.
     import kin_config as cfg
+    import summarize_track_metrics
+    from kin_prompt import resolve_settings
 
-    branch = cfg.settings()
-    main(cfg.ROOT_DATA_DIR, branch["input_subdir"], branch["results_dir_name"],
-         cfg.PARAMS, banner=branch["banner"])
+    run = resolve_settings(script_name="extract_track_metrics.py")
 
-    if cfg.SUMMARIZE_AFTER_EXTRACTION:
-        print()
-        import summarize_track_metrics
-        summarize_track_metrics.main(
-            branch["results_dir"],
-            title_suffix=branch["title_suffix"], extra_note=branch["extra_note"],
-            min_total_time_s=cfg.MIN_TOTAL_TIME_S, min_direction_changes=cfg.MIN_DIRECTION_CHANGES)
-    else:
-        print("Run summarize_track_metrics.py to produce the summary statistics.")
+    for branch_name in run["branches"]:
+        branch = cfg.settings(branch_name, run["root"])
+
+        print("\n" + "=" * 80)
+        main(run["root"], branch["input_subdir"], branch["results_dir_name"],
+             cfg.PARAMS, banner=branch["banner"])
+
+        if cfg.SUMMARIZE_AFTER_EXTRACTION:
+            print()
+            summarize_track_metrics.main(
+                branch["results_dir"],
+                title_suffix=branch["title_suffix"], extra_note=branch["extra_note"],
+                min_total_time_s=cfg.MIN_TOTAL_TIME_S, min_direction_changes=cfg.MIN_DIRECTION_CHANGES)
+        else:
+            print("Run summarize_track_metrics.py to produce the summary statistics.")
+
+    if len(run["branches"]) > 1:
+        print("\n" + "=" * 80)
+        print(f"Finished all branches: {', '.join(run['branches'])}")

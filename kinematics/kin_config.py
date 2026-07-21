@@ -1,30 +1,18 @@
 # The authors of the code are Max Riekeles and Berke Santos. Contact: riekeles@tu-berlin.de
 #
-# THE ONLY FILE YOU EDIT TO RUN THE KINEMATIC ANALYSIS (stage 7).
+# Analysis settings for the kinematic analysis (stage 7).
 #
-# Set ROOT_DATA_DIR and BRANCH below, then run:
+# NOTE: the root data directory and the alignment branch are NOT here - they are
+# machine-specific, so hard-coding them would put one person's paths in the
+# repository. They are asked for when you run the analysis (or passed on the
+# command line); see kin_prompt.py. This file holds only settings that are the
+# same on every machine.
 #
 #     cd kinematics
-#     python extract_track_metrics.py       # per-track metrics -> CSV, then the summary
-#     python summarize_track_metrics.py     # summary only (re-run after changing grouping/filters)
+#     python extract_track_metrics.py       # asks for path + branch, then runs everything
+#     python summarize_track_metrics.py     # summary only (after changing the settings below)
 #
-# Both scripts read their settings from here, so the branch is stated once.
-#
-from pathlib import Path
-
 from kin_metrics import DEFAULT_PARAMS
-
-# --- WHAT TO ANALYSE -----------------------------------------------------
-
-# Root directory containing the segmentation_output folder
-ROOT_DATA_DIR = Path("/media/general-max-riekeles/MMT_3/ME/Analysis_20_09")  # Update this path
-
-# Which alignment branch to analyse:
-#   "corrected"   - alignment_2 branch, MHI-corrected timepoints (canonical;
-#                   what the old final_kin_param_extraction_v4.py did)
-#   "uncorrected" - alignment_1 branch, original detection timepoints
-#                   (what the old final_kin_param_extraction_v3.py did)
-BRANCH = "corrected"
 
 # --- HOW TO ANALYSE ------------------------------------------------------
 
@@ -42,7 +30,7 @@ MIN_DIRECTION_CHANGES = None
 # Run the summary stage automatically at the end of extract_track_metrics.py.
 SUMMARIZE_AFTER_EXTRACTION = True
 
-# --- DERIVED SETTINGS (no need to edit below) ----------------------------
+# --- BRANCH DEFINITIONS (no need to edit below) --------------------------
 
 _BRANCHES = {
     "corrected": {
@@ -62,10 +50,14 @@ _BRANCHES = {
 }
 
 
-def settings():
-    """Return the folder names and report wording for the configured BRANCH."""
-    if BRANCH not in _BRANCHES:
-        raise ValueError(f"BRANCH must be one of {sorted(_BRANCHES)}, got {BRANCH!r}")
-    resolved = dict(_BRANCHES[BRANCH])
-    resolved["results_dir"] = ROOT_DATA_DIR / resolved["results_dir_name"]
+def settings(branch, root_data_dir):
+    """
+    Return the folder names and report wording for one alignment branch.
+
+    branch: "corrected" (alignment_2, canonical) or "uncorrected" (alignment_1).
+    """
+    if branch not in _BRANCHES:
+        raise ValueError(f"branch must be one of {sorted(_BRANCHES)}, got {branch!r}")
+    resolved = dict(_BRANCHES[branch])
+    resolved["results_dir"] = root_data_dir / resolved["results_dir_name"]
     return resolved

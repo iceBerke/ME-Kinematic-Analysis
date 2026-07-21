@@ -17,6 +17,9 @@ env/
 .DS_Store
 Thumbs.db
 
+# Machine-specific settings remembered between kinematic-analysis runs
+kinematics/.kin_last_run.json
+
 # Pipeline data & outputs (kept outside the repo — see README)
 # Uncomment if you ever place sample data inside the repo tree:
 # *.npy

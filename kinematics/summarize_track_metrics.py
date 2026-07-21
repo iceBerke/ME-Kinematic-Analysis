@@ -111,10 +111,20 @@ def main(results_dir, title_suffix="", extra_note="", min_total_time_s=0.0, min_
 
 
 if __name__ == "__main__":
-    # All settings live in kin_config.py - edit that file, not this one.
+    # The root directory and branch are asked for (or given on the command line);
+    # the track filters come from kin_config.py.
     import kin_config as cfg
+    from kin_prompt import resolve_settings
 
-    branch = cfg.settings()
-    main(branch["results_dir"],
-         title_suffix=branch["title_suffix"], extra_note=branch["extra_note"],
-         min_total_time_s=cfg.MIN_TOTAL_TIME_S, min_direction_changes=cfg.MIN_DIRECTION_CHANGES)
+    # No segmentation_output/ required here - this stage only reads the CSVs
+    # written by extract_track_metrics.py.
+    run = resolve_settings(script_name="summarize_track_metrics.py",
+                           require_segmentation_output=False,
+                           title="Kinematic summary statistics (stage 7b)")
+
+    for branch_name in run["branches"]:
+        branch = cfg.settings(branch_name, run["root"])
+        print("\n" + "=" * 80)
+        main(branch["results_dir"],
+             title_suffix=branch["title_suffix"], extra_note=branch["extra_note"],
+             min_total_time_s=cfg.MIN_TOTAL_TIME_S, min_direction_changes=cfg.MIN_DIRECTION_CHANGES)

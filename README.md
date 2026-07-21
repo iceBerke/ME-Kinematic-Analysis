@@ -12,9 +12,9 @@ Experiments are organised by exposure condition (e.g. `Lead_1`, `Copper_3`, `Nic
 > These are standalone batch scripts, not an installable package. There is **no CLI** —
 > each script is run directly (`python <script>.py`) after editing the hard-coded
 > `root_directory` (and parameters) near the bottom of the file. Paths in the scripts are
-> Linux-style and typically need rewriting for your machine. Stage 7 (`kinematics/`) follows
-> the same hard-coded-constant convention, but its constants sit in `kin_config.py` rather
-> than in the script you run.
+> Linux-style and typically need rewriting for your machine. Stage 7 (`kinematics/`) is the
+> exception: it **asks** for the data path and the branch when you run it, so no
+> machine-specific path is stored in the repository.
 
 ## Installation
 
@@ -79,14 +79,9 @@ Each branch is a self-contained sequence: align → overlay (visualisation) → 
 overlay-collect → kinematics.
 
 Stage 7 is the exception: the two branch scripts have been replaced by the shared
-`kinematics/` folder. It is also the only stage not configured by editing the script
-itself: open `kinematics/kin_config.py` in a text editor and change the two hard-coded
-constants at the top (there are still no command-line arguments), then run the pipeline.
-
-```python
-ROOT_DATA_DIR = Path("D:/ME/Analysis_20_09")   # folder holding segmentation_output/
-BRANCH = "corrected"                            # or "uncorrected"
-```
+`kinematics/` folder, and it is the only stage that **asks** for its settings instead of
+being edited — the data path and the branch are specific to your machine, so they are not
+stored in the repository.
 
 ```bash
 cd kinematics
@@ -94,9 +89,33 @@ python extract_track_metrics.py     # per-track CSVs, then the summary statistic
 python summarize_track_metrics.py   # optional: re-summarize existing CSVs only
 ```
 
-`BRANCH = "corrected"` reproduces the old `alignment_2/…_v4.py`, `"uncorrected"` the old
+```
+=== Kinematic analysis (stage 7) ===
+
+Root data directory (must contain segmentation_output/; q to quit)
+  [D:\ME\Analysis_20_09]:            <- last used; press Enter to accept
+
+Which alignment branch?
+  1) corrected    MHI-corrected timepoints (canonical)  -> processed_results_2/
+  2) uncorrected  original detection timepoints         -> processed_results/
+  3) both         runs 1 then 2
+  [1]:
+```
+
+`corrected` reproduces the old `alignment_2/…_v4.py`, `uncorrected` the old
 `alignment_1/…_v3.py`; the two write to `processed_results_2/` and `processed_results/`
-respectively, so both can be produced without overwriting each other. The superseded
+respectively, so `both` runs them in one go without overwriting anything. Your last answers
+are remembered in `kinematics/.kin_last_run.json` (gitignored) and offered as the defaults
+next time.
+
+For unattended runs, pass the same two answers as arguments and nothing is asked:
+
+```bash
+python extract_track_metrics.py "D:/ME/Analysis_20_09" both
+```
+
+Analysis settings that are *not* machine-specific — velocity/angle thresholds, smoothing,
+summary track filters — stay as constants in `kinematics/kin_config.py`. The superseded
 `alignment_1/…_v3.py` / `alignment_2/…_v4.py` remain in place until the new scripts have
 been validated on the full dataset.
 
@@ -108,7 +127,7 @@ blob_detection/           Stage 3 + tuning, inspection, and cleanup helpers
 frame_rate/               Stage 5: acquisition frequency (shared by both branches)
 alignment_1/              Uncorrected timing branch (stages 4, 6, 7 + visualisation)
 alignment_2/              Corrected timing branch (canonical; stages 4, 6, 7 + visualisation)
-kinematics/               Stage 7: config + metrics/grouping modules + two runnable stages
+kinematics/               Stage 7: prompt + config + metrics/grouping modules + two stages
 segmentation_checks/      Batch QA of segmentation output (fragmentation / multi-track)
 segmentation_corrections/ Manual per-image track fix-ups (split / merge)
 utils/                    MHI file-management helpers
