@@ -45,6 +45,41 @@ An **MHI** (Motion History Image) encodes, per pixel, the time a bacterium moved
 it. Coloured MHIs are produced upstream by an external tool (there is no MHI-generation
 script here); this pipeline consumes them.
 
+## Paths to edit before running
+
+There is no config file: each script hard-codes its path(s) as a constant near the bottom
+(inside `if __name__ == "__main__":`) or, for a few, at the top of the file. The committed
+values are the original authors' Linux paths — **rewrite them for your machine before
+running.** The variable name and what it should point to differ from script to script, so
+the table lists every path a user edits. (Archived scripts in `archive/` are superseded and
+not meant to be run.)
+
+> **Stage 7 is the exception:** `kinematics/extract_track_metrics.py` and
+> `summarize_track_metrics.py` *ask* for the path at runtime (or take it as a command-line
+> argument), so there is nothing to edit in them. Their analysis *values* still have code
+> defaults — per-track thresholds in `kinematics/kin_metrics.py` (`DEFAULT_PARAMS`), the two
+> summary filters in `kinematics/kin_config.py`.
+
+| Script | Variable to edit | Point it at |
+|---|---|---|
+| `segmentation/track_segmentation_v4.py` | `root_directory` | dataset root |
+| `segmentation/npy_conversion_v1.py` | `root_folder` | the `segmentation_output/` directory |
+| `blob_detection/blob_detection_v3_memory_optimized.py` | `root_directory` | dataset root |
+| `blob_detection/blob_parameters_check_v3.py` | `image_path` | a single `raw/*.tif` frame |
+| `blob_detection/check_blobs_npy.py` | `NPY_FILE_PATH` | a single `blobs_*.npy` |
+| `blob_detection/blob_detection_cleanup.py` | `segmentation_output_path` | the `segmentation_output/` directory |
+| `frame_rate/frame_rate_v1.py` | `root_directory` | dataset root |
+| `alignment_1/blob_mhi_tracks_alignment_v4.py`, `alignment_2/blob_mhi_tracks_alignment_v5.py` | `root_directory` | dataset root |
+| `alignment_1/mhi_overlay_v2.py`, `alignment_2/mhi_overlay_v3.py` | `segmentation_output_path` | the `segmentation_output/` directory |
+| `alignment_1/time_coordinates_conversions_v2.py`, `alignment_2/time_coordinates_conversions_v3.py` | `ROOT_DIRECTORY` | dataset root |
+| `alignment_1/mhi_overlay_copies_v1.py`, `alignment_2/mhi_overlay_copies_v2.py` | `root_directory_path` | dataset root |
+| `kinematics/test_stage7_structure.py` | `ROOT_DIRECTORY` | dataset root (structural regression test) |
+| `segmentation_checks/error_analysis_v1.py`, `error_analysis_v3.py` | `root_folder` | one experiment folder under `segmentation_output/` |
+| `segmentation_corrections/correction_v1.py`, `_v2.py`, `_v3.py` | `image_path` | a single track PNG (`t<N>.png`) |
+| `segmentation_corrections/correction_v4.py` | `output_file` (plus the hand-listed input PNGs in the script) | the merged-output PNG path |
+| `utils/copy_rename_MHIs.py` | `parent_directory` | the folder of `.tif`s to copy |
+| `utils/copy_color_mhis_and_normal_mhis.py` | `src_directory`, `dest_directory` | source and destination folders |
+
 ## Pipeline
 
 Run the stages in order. Detected-blob arrays are `(n, 6)` = `[x, y, timepoint, area,
