@@ -138,6 +138,14 @@ offered. The superseded
 `alignment_1/…_v3.py` / `alignment_2/…_v4.py` remain in place until the new scripts have
 been validated on the full dataset.
 
+**Regression test.** `kinematics/test_stage7_structure.py` runs stage 7 against a real
+dataset and checks the *structure* of the output it produces — the right set of CSV and
+summary files, correct CSV columns, well-formed rows — but not the metric values, so it
+stays valid as you change the analysis. Point its top-of-file `ROOT_DIRECTORY` at a
+dataset root and run `python test_stage7_structure.py`; it writes into a temporary folder
+outside your data (leaving any existing `processed_results[_2]/` untouched) and cleans up,
+exiting 0 on pass and 1 on failure.
+
 ## Repository structure
 
 ```
