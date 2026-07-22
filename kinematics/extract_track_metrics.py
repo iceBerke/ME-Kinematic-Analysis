@@ -225,7 +225,9 @@ if __name__ == "__main__":
                            param_specs=analysis_specs + filter_specs)
 
     chosen = run["params"]
-    params = {**cfg.PARAMS, **{spec["key"]: chosen[spec["key"]] for spec in analysis_specs}}
+    # analysis_specs covers all per-track keys; compute_track_metrics merges these
+    # over kin_metrics.DEFAULT_PARAMS internally, so no base dict is needed here.
+    params = {spec["key"]: chosen[spec["key"]] for spec in analysis_specs}
     min_total_time_s = chosen["MIN_TOTAL_TIME_S"]
     min_direction_changes = chosen["MIN_DIRECTION_CHANGES"]
 

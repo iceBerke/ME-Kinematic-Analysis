@@ -16,11 +16,10 @@ from kin_metrics import DEFAULT_PARAMS
 
 # --- HOW TO ANALYSE ------------------------------------------------------
 
-# Per-track analysis thresholds; see kin_metrics.DEFAULT_PARAMS for the full list.
-PARAMS = dict(DEFAULT_PARAMS)
-# PARAMS["MAX_SPEED"] = 60           # µm/s
-# PARAMS["SMOOTHING_WINDOW"] = 1     # 1 = no smoothing
-# PARAMS["ANGLE_THRESHOLD"] = 30     # degrees
+# The per-track analysis thresholds (MAX_SPEED, SMOOTHING_WINDOW, ANGLE_THRESHOLD,
+# MIN_DISPLACEMENT, MIN_TIME_BETWEEN_DIRECTION_CHANGES) have a single home:
+# kin_metrics.DEFAULT_PARAMS. Edit them there to change what the prompt pre-fills.
+# The summary-stage track filters below have no other home, so they live here.
 
 # Track filters applied when grouping (summary stage only - the per-track CSV
 # always keeps every track). Defaults are no-ops, matching the old scripts.
@@ -42,17 +41,17 @@ def analysis_param_specs():
     return [
         {"key": "MAX_SPEED", "label": "Maximum speed (velocities above this are dropped)",
          "unit": "um/s", "kind": "float", "min": 0, "min_exclusive": True,
-         "default": PARAMS["MAX_SPEED"]},
+         "default": DEFAULT_PARAMS["MAX_SPEED"]},
         {"key": "SMOOTHING_WINDOW", "label": "Smoothing window (1 = no smoothing)",
-         "kind": "int", "min": 1, "default": PARAMS["SMOOTHING_WINDOW"]},
+         "kind": "int", "min": 1, "default": DEFAULT_PARAMS["SMOOTHING_WINDOW"]},
         {"key": "ANGLE_THRESHOLD", "label": "Direction-change angle threshold",
-         "unit": "deg", "kind": "float", "min": 0, "default": PARAMS["ANGLE_THRESHOLD"]},
+         "unit": "deg", "kind": "float", "min": 0, "default": DEFAULT_PARAMS["ANGLE_THRESHOLD"]},
         {"key": "MIN_DISPLACEMENT", "label": "Minimum displacement (noise floor)",
-         "unit": "um", "kind": "float", "min": 0, "default": PARAMS["MIN_DISPLACEMENT"]},
+         "unit": "um", "kind": "float", "min": 0, "default": DEFAULT_PARAMS["MIN_DISPLACEMENT"]},
         {"key": "MIN_TIME_BETWEEN_DIRECTION_CHANGES",
          "label": "Minimum time between direction changes",
          "unit": "s", "kind": "float", "min": 0,
-         "default": PARAMS["MIN_TIME_BETWEEN_DIRECTION_CHANGES"]},
+         "default": DEFAULT_PARAMS["MIN_TIME_BETWEEN_DIRECTION_CHANGES"]},
     ]
 
 

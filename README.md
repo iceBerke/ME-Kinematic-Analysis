@@ -104,7 +104,7 @@ Which alignment branch?
 
 Analysis parameters (press Enter to keep the shown default):
   Maximum speed (um/s)
-    [60]:                             <- each parameter pre-filled from kin_config.py
+    [60]:                             <- each parameter pre-filled from the code defaults
   Smoothing window (1 = no smoothing)
     [1]:
   ... (angle threshold, min displacement, min time between direction changes,
@@ -115,24 +115,26 @@ Analysis parameters (press Enter to keep the shown default):
 `alignment_1/…_v3.py`; the two write to `processed_results_2/` and `processed_results/`
 respectively, so `both` runs them in one go without overwriting anything. Your last
 **root and branch** are remembered in `kinematics/.kin_last_run.json` (gitignored) and
-offered as the defaults next time; the analysis parameters are always offered from
-`kin_config.py`, not from the previous run.
+offered as the defaults next time; the analysis parameters are always offered from the
+code defaults, not from the previous run.
 
-After root and branch, every analysis parameter is asked for with its `kin_config.py`
-value pre-filled — press Enter to keep it, or type a new value for this run. The
+After root and branch, every analysis parameter is asked for with its code default
+pre-filled — press Enter to keep it, or type a new value for this run. The
 `summarize_track_metrics.py` stage only asks for the two summary track filters (the
 per-track parameters are already baked into the CSVs).
 
 For unattended runs, pass root and branch as arguments; nothing is asked and the
-parameters fall back to their `kin_config.py` defaults:
+parameters fall back to their code defaults:
 
 ```bash
 python extract_track_metrics.py "D:/ME/Analysis_20_09" both
 ```
 
-The `kin_config.py` values are the **defaults** offered by those prompts (and the values
-used by unattended runs). To change what is pre-filled — velocity/angle thresholds,
-smoothing, summary track filters — edit the constants there. The superseded
+Those code defaults are the values the prompts pre-fill (and the values unattended runs
+use). They live in two places: the **per-track thresholds** (speed, angle, smoothing,
+displacement, timing) in `kinematics/kin_metrics.py` (`DEFAULT_PARAMS`), and the **two
+summary track filters** in `kinematics/kin_config.py`. Edit them there to change what is
+offered. The superseded
 `alignment_1/…_v3.py` / `alignment_2/…_v4.py` remain in place until the new scripts have
 been validated on the full dataset.
 
