@@ -14,9 +14,9 @@
 # THIS IS THE SCRIPT TO RUN for a full kinematic analysis:
 #     cd kinematics && python extract_track_metrics.py
 # All settings - including which branch to analyse - are in kin_config.py.
-# One script replaces both of the old ones:
-#   alignment_1/final_kin_param_extraction_v3.py -> BRANCH = "uncorrected"
-#   alignment_2/final_kin_param_extraction_v4.py -> BRANCH = "corrected"   (canonical)
+# One script replaces both of the old ones (now in archive/):
+#   archive/final_kin_param_extraction_v3.py -> branch "uncorrected"
+#   archive/final_kin_param_extraction_v4.py -> branch "corrected"   (canonical)
 #
 # Expected folder structure (mirrors the rest of the pipeline):
 # root_directory/

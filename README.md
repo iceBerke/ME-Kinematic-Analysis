@@ -134,9 +134,8 @@ Those code defaults are the values the prompts pre-fill (and the values unattend
 use). They live in two places: the **per-track thresholds** (speed, angle, smoothing,
 displacement, timing) in `kinematics/kin_metrics.py` (`DEFAULT_PARAMS`), and the **two
 summary track filters** in `kinematics/kin_config.py`. Edit them there to change what is
-offered. The superseded
-`alignment_1/…_v3.py` / `alignment_2/…_v4.py` remain in place until the new scripts have
-been validated on the full dataset.
+offered. The superseded per-branch scripts (`final_kin_param_extraction_v3.py` /
+`_v4.py`) have been validated against the new stage and moved to `archive/`.
 
 **Regression test.** `kinematics/test_stage7_structure.py` runs stage 7 against a real
 dataset and checks the *structure* of the output it produces — the right set of CSV and
@@ -152,8 +151,8 @@ exiting 0 on pass and 1 on failure.
 segmentation/             Stages 1–2: colour-segment MHIs into track masks
 blob_detection/           Stage 3 + tuning, inspection, and cleanup helpers
 frame_rate/               Stage 5: acquisition frequency (shared by both branches)
-alignment_1/              Uncorrected timing branch (stages 4, 6, 7 + visualisation)
-alignment_2/              Corrected timing branch (canonical; stages 4, 6, 7 + visualisation)
+alignment_1/              Uncorrected timing branch (stages 4, 6 + visualisation)
+alignment_2/              Corrected timing branch (canonical; stages 4, 6 + visualisation)
 kinematics/               Stage 7: prompt + config + metrics/grouping modules + two stages
 segmentation_checks/      Batch QA of segmentation output (fragmentation / multi-track)
 segmentation_corrections/ Manual per-image track fix-ups (split / merge)
