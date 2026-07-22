@@ -13,8 +13,8 @@ Experiments are organised by exposure condition (e.g. `Lead_1`, `Copper_3`, `Nic
 > each script is run directly (`python <script>.py`) after editing the hard-coded
 > `root_directory` (and parameters) near the bottom of the file. Paths in the scripts are
 > Linux-style and typically need rewriting for your machine. Stage 7 (`kinematics/`) is the
-> exception: it **asks** for the data path and the branch when you run it, so no
-> machine-specific path is stored in the repository.
+> exception: it **asks** for the data path, the branch, and the analysis parameters when you
+> run it, so no machine-specific path is stored in the repository.
 
 ## Installation
 
@@ -80,8 +80,9 @@ overlay-collect → kinematics.
 
 Stage 7 is the exception: the two branch scripts have been replaced by the shared
 `kinematics/` folder, and it is the only stage that **asks** for its settings instead of
-being edited — the data path and the branch are specific to your machine, so they are not
-stored in the repository.
+being edited — the data path and the branch are specific to your machine (so they are not
+stored in the repository), and the analysis parameters are prompted too, pre-filled from
+`kin_config.py`.
 
 ```bash
 cd kinematics
@@ -100,22 +101,38 @@ Which alignment branch?
   2) uncorrected  original detection timepoints         -> processed_results/
   3) both         runs 1 then 2
   [1]:
+
+Analysis parameters (press Enter to keep the shown default):
+  Maximum speed (um/s)
+    [60]:                             <- each parameter pre-filled from kin_config.py
+  Smoothing window (1 = no smoothing)
+    [1]:
+  ... (angle threshold, min displacement, min time between direction changes,
+       min total track time, min direction changes)
 ```
 
 `corrected` reproduces the old `alignment_2/…_v4.py`, `uncorrected` the old
 `alignment_1/…_v3.py`; the two write to `processed_results_2/` and `processed_results/`
-respectively, so `both` runs them in one go without overwriting anything. Your last answers
-are remembered in `kinematics/.kin_last_run.json` (gitignored) and offered as the defaults
-next time.
+respectively, so `both` runs them in one go without overwriting anything. Your last
+**root and branch** are remembered in `kinematics/.kin_last_run.json` (gitignored) and
+offered as the defaults next time; the analysis parameters are always offered from
+`kin_config.py`, not from the previous run.
 
-For unattended runs, pass the same two answers as arguments and nothing is asked:
+After root and branch, every analysis parameter is asked for with its `kin_config.py`
+value pre-filled — press Enter to keep it, or type a new value for this run. The
+`summarize_track_metrics.py` stage only asks for the two summary track filters (the
+per-track parameters are already baked into the CSVs).
+
+For unattended runs, pass root and branch as arguments; nothing is asked and the
+parameters fall back to their `kin_config.py` defaults:
 
 ```bash
 python extract_track_metrics.py "D:/ME/Analysis_20_09" both
 ```
 
-Analysis settings that are *not* machine-specific — velocity/angle thresholds, smoothing,
-summary track filters — stay as constants in `kinematics/kin_config.py`. The superseded
+The `kin_config.py` values are the **defaults** offered by those prompts (and the values
+used by unattended runs). To change what is pre-filled — velocity/angle thresholds,
+smoothing, summary track filters — edit the constants there. The superseded
 `alignment_1/…_v3.py` / `alignment_2/…_v4.py` remain in place until the new scripts have
 been validated on the full dataset.
 

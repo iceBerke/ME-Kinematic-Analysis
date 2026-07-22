@@ -152,10 +152,94 @@ def prompt_branch(default="corrected"):
         print("  Please answer 1, 2 or 3 (or corrected / uncorrected / both).\n")
 
 
-def confirm(root, choice):
+# --- analysis parameters --------------------------------------------------
+#
+# Each stage passes resolve_settings a list of "param specs" describing the
+# numeric analysis settings it wants asked for. A spec is a dict:
+#   {"key", "label", "default", "kind", ["unit", "min", "min_exclusive"]}
+# 'kind' is 'float', 'int', or 'int_or_none' (the last also accepts 'none' to
+# disable the setting). The offered default is always the spec's 'default'
+# (i.e. the value in kin_config.py) - parameters are deliberately NOT
+# remembered between runs, unlike the root directory and branch.
+
+def _fmt_value(value):
+    """Human-readable form of a parameter value (None shows as 'none')."""
+    return "none" if value is None else str(value)
+
+
+def _parse_param(text, spec):
+    """
+    Parse one typed parameter value against its spec.
+
+    Returns (ok, value, error_message); error_message is None when ok is True.
+    """
+    kind = spec["kind"]
+    text = text.strip()
+    if kind == "int_or_none" and text.lower() in ("none", "off", "na", "null", "-"):
+        return True, None, None
+    try:
+        value = int(text) if kind in ("int", "int_or_none") else float(text)
+    except ValueError:
+        if kind == "int_or_none":
+            return False, None, "enter a whole number, or 'none' to disable it"
+        if kind == "int":
+            return False, None, "enter a whole number"
+        return False, None, "enter a number"
+    minimum = spec.get("min")
+    if minimum is not None:
+        if spec.get("min_exclusive"):
+            if not value > minimum:
+                return False, None, f"must be greater than {minimum}"
+        elif not value >= minimum:
+            return False, None, f"must be at least {minimum}"
+    return True, value, None
+
+
+def _prompt_one_param(spec):
+    """Ask for a single parameter, re-asking on bad input. Blank keeps the default."""
+    label = f"{spec['label']} ({spec['unit']})" if spec.get("unit") else spec["label"]
+    default_str = _fmt_value(spec["default"])
+    while True:
+        try:
+            raw = input(f"  {label}\n    [{default_str}]: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\nCancelled.")
+            sys.exit(1)
+        if raw == "":
+            return spec["default"]
+        ok, value, error = _parse_param(raw, spec)
+        if ok:
+            return value
+        print(f"    {error}.\n")
+
+
+def prompt_params(param_specs):
+    """Prompt for each parameter in turn; returns {key: value}. Blank keeps the default."""
+    if not param_specs:
+        return {}
+    print("\nAnalysis parameters (press Enter to keep the shown default):")
+    return {spec["key"]: _prompt_one_param(spec) for spec in param_specs}
+
+
+def param_defaults(param_specs):
+    """Every spec's default value, without prompting (used for unattended runs)."""
+    return {spec["key"]: spec["default"] for spec in (param_specs or [])}
+
+
+def _print_params(param_specs, params):
+    """Echo the parameter values that will be used, one per line."""
+    for spec in (param_specs or []):
+        unit = f" {spec['unit']}" if spec.get("unit") else ""
+        print(f"  {spec['key']:<38} {_fmt_value(params[spec['key']])}{unit}")
+
+
+def confirm(root, choice, param_specs=None, params=None):
     print("\n" + "-" * 60)
     print(f"Root data directory : {root}")
     print(f"Branch(es) to run   : {', '.join(BRANCH_CHOICES[choice])}")
+    if param_specs:
+        print("Parameters          :")
+        _print_params(param_specs, params)
     print("-" * 60)
     answer = _ask("Proceed?", "Y").strip().lower()
     if answer not in ("y", "yes"):
@@ -166,11 +250,16 @@ def confirm(root, choice):
 # --- entry point ----------------------------------------------------------
 
 def resolve_settings(argv=None, script_name="extract_track_metrics.py",
-                     require_segmentation_output=True, title="Kinematic analysis (stage 7)"):
+                     require_segmentation_output=True, title="Kinematic analysis (stage 7)",
+                     param_specs=None):
     """
-    Work out the root directory and branches for this run.
+    Work out the root directory, branches and analysis parameters for this run.
 
-    Returns {'root': Path, 'branches': [str, ...], 'choice': str}.
+    param_specs: optional list of parameter specs (see the "analysis parameters"
+    section above). When given and the run is interactive, each is asked for
+    with its default pre-filled; otherwise the defaults are used unchanged.
+
+    Returns {'root': Path, 'branches': [str, ...], 'choice': str, 'params': dict}.
     Exits with a message on --help, bad arguments, cancellation, or when there
     is no terminal available to ask.
     """
@@ -204,10 +293,13 @@ def resolve_settings(argv=None, script_name="extract_track_metrics.py",
             print(f"ERROR: cannot use {arg_root} - {problem}.")
             sys.exit(2)
         choice = arg_choice or "corrected"
+        params = param_defaults(param_specs)
         print(f"Root data directory : {arg_root}")
         print(f"Branch(es) to run   : {', '.join(BRANCH_CHOICES[choice])}")
+        _print_params(param_specs, params)
         save_last_run(arg_root, choice)
-        return {"root": arg_root, "branches": BRANCH_CHOICES[choice], "choice": choice}
+        return {"root": arg_root, "branches": BRANCH_CHOICES[choice],
+                "choice": choice, "params": params}
 
     # Interactive: ask for whatever the command line did not supply.
     print(f"\n=== {title} ===\n")
@@ -233,12 +325,23 @@ def resolve_settings(argv=None, script_name="extract_track_metrics.py",
         choice = prompt_branch(last.get("branch", "corrected"))
         asked = True
 
+    # Prompt for the parameters only on a genuinely interactive run. If both
+    # root and branch came from the command line (asked is False) we skip them
+    # and use the defaults, so a fully argument-driven run never stalls on a
+    # prompt - matching how confirmation is handled just below.
+    if asked and param_specs:
+        params = prompt_params(param_specs)
+    else:
+        params = param_defaults(param_specs)
+
     # Only confirm what was typed here. If both values came from the command
     # line there is nothing to check back on, and asking would defeat the point
     # of passing them (and stall an unattended run that merely looks like a TTY).
     if asked:
-        confirm(root, choice)
+        confirm(root, choice, param_specs, params)
     else:
         print(f"Branch(es) to run   : {', '.join(BRANCH_CHOICES[choice])}")
+        _print_params(param_specs, params)
     save_last_run(root, choice)
-    return {"root": root, "branches": BRANCH_CHOICES[choice], "choice": choice}
+    return {"root": root, "branches": BRANCH_CHOICES[choice],
+            "choice": choice, "params": params}

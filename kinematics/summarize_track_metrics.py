@@ -117,14 +117,20 @@ if __name__ == "__main__":
     from kin_prompt import resolve_settings
 
     # No segmentation_output/ required here - this stage only reads the CSVs
-    # written by extract_track_metrics.py.
+    # written by extract_track_metrics.py. Only the summary track filters are
+    # asked for; the per-track analysis parameters are already baked into the CSVs.
+    filter_specs = cfg.summary_filter_specs()
     run = resolve_settings(script_name="summarize_track_metrics.py",
                            require_segmentation_output=False,
-                           title="Kinematic summary statistics (stage 7b)")
+                           title="Kinematic summary statistics (stage 7b)",
+                           param_specs=filter_specs)
+
+    min_total_time_s = run["params"]["MIN_TOTAL_TIME_S"]
+    min_direction_changes = run["params"]["MIN_DIRECTION_CHANGES"]
 
     for branch_name in run["branches"]:
         branch = cfg.settings(branch_name, run["root"])
         print("\n" + "=" * 80)
         main(branch["results_dir"],
              title_suffix=branch["title_suffix"], extra_note=branch["extra_note"],
-             min_total_time_s=cfg.MIN_TOTAL_TIME_S, min_direction_changes=cfg.MIN_DIRECTION_CHANGES)
+             min_total_time_s=min_total_time_s, min_direction_changes=min_direction_changes)

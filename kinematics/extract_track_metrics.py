@@ -217,21 +217,31 @@ if __name__ == "__main__":
     import summarize_track_metrics
     from kin_prompt import resolve_settings
 
-    run = resolve_settings(script_name="extract_track_metrics.py")
+    # Ask for the per-track analysis parameters and the summary track filters
+    # (each pre-filled with its kin_config.py default) alongside root + branch.
+    analysis_specs = cfg.analysis_param_specs()
+    filter_specs = cfg.summary_filter_specs()
+    run = resolve_settings(script_name="extract_track_metrics.py",
+                           param_specs=analysis_specs + filter_specs)
+
+    chosen = run["params"]
+    params = {**cfg.PARAMS, **{spec["key"]: chosen[spec["key"]] for spec in analysis_specs}}
+    min_total_time_s = chosen["MIN_TOTAL_TIME_S"]
+    min_direction_changes = chosen["MIN_DIRECTION_CHANGES"]
 
     for branch_name in run["branches"]:
         branch = cfg.settings(branch_name, run["root"])
 
         print("\n" + "=" * 80)
         main(run["root"], branch["input_subdir"], branch["results_dir_name"],
-             cfg.PARAMS, banner=branch["banner"])
+             params, banner=branch["banner"])
 
         if cfg.SUMMARIZE_AFTER_EXTRACTION:
             print()
             summarize_track_metrics.main(
                 branch["results_dir"],
                 title_suffix=branch["title_suffix"], extra_note=branch["extra_note"],
-                min_total_time_s=cfg.MIN_TOTAL_TIME_S, min_direction_changes=cfg.MIN_DIRECTION_CHANGES)
+                min_total_time_s=min_total_time_s, min_direction_changes=min_direction_changes)
         else:
             print("Run summarize_track_metrics.py to produce the summary statistics.")
 

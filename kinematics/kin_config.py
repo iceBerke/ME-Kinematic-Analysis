@@ -30,6 +30,42 @@ MIN_DIRECTION_CHANGES = None
 # Run the summary stage automatically at the end of extract_track_metrics.py.
 SUMMARIZE_AFTER_EXTRACTION = True
 
+# The values above are the DEFAULTS. When the analysis is run interactively,
+# each parameter is asked for in the terminal with its value here pre-filled
+# (press Enter to keep it); non-interactive/argument-driven runs use them as-is.
+# These two builders describe the parameters to the prompt (kin_prompt.py). The
+# offered default always comes from the constants above - parameters are not
+# remembered between runs (only the root directory and branch are).
+
+def analysis_param_specs():
+    """Per-track analysis parameters asked for by stage 7a (extract_track_metrics.py)."""
+    return [
+        {"key": "MAX_SPEED", "label": "Maximum speed (velocities above this are dropped)",
+         "unit": "um/s", "kind": "float", "min": 0, "min_exclusive": True,
+         "default": PARAMS["MAX_SPEED"]},
+        {"key": "SMOOTHING_WINDOW", "label": "Smoothing window (1 = no smoothing)",
+         "kind": "int", "min": 1, "default": PARAMS["SMOOTHING_WINDOW"]},
+        {"key": "ANGLE_THRESHOLD", "label": "Direction-change angle threshold",
+         "unit": "deg", "kind": "float", "min": 0, "default": PARAMS["ANGLE_THRESHOLD"]},
+        {"key": "MIN_DISPLACEMENT", "label": "Minimum displacement (noise floor)",
+         "unit": "um", "kind": "float", "min": 0, "default": PARAMS["MIN_DISPLACEMENT"]},
+        {"key": "MIN_TIME_BETWEEN_DIRECTION_CHANGES",
+         "label": "Minimum time between direction changes",
+         "unit": "s", "kind": "float", "min": 0,
+         "default": PARAMS["MIN_TIME_BETWEEN_DIRECTION_CHANGES"]},
+    ]
+
+
+def summary_filter_specs():
+    """Summary-stage track filters asked for by 7a->7b and standalone 7b."""
+    return [
+        {"key": "MIN_TOTAL_TIME_S", "label": "Minimum total track time to include a track",
+         "unit": "s", "kind": "float", "min": 0, "default": MIN_TOTAL_TIME_S},
+        {"key": "MIN_DIRECTION_CHANGES",
+         "label": "Minimum direction changes to include a track (none = keep all)",
+         "kind": "int_or_none", "min": 0, "default": MIN_DIRECTION_CHANGES},
+    ]
+
 # --- BRANCH DEFINITIONS (no need to edit below) --------------------------
 
 _BRANCHES = {
