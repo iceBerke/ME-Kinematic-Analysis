@@ -28,7 +28,7 @@
 #   1. exactly one <experiment>_processed_results.csv per experiment subfolder
 #      that actually contains this branch's converted inputs;
 #   2. each CSV's header matches extract_track_metrics.CSV_HEADER exactly;
-#   3. each row is well formed: right field count, sh_<N>_t<n> track name,
+#   3. each row is well formed: right field count, sh_<suffix>_t<n> track name,
 #      numeric metric columns;
 #   4. one <experiment>_summary_statistics.txt for every experiment whose CSV
 #      held groupable tracks (a shortened_ dir + an experimental condition).
@@ -54,7 +54,7 @@ from kin_metrics import DEFAULT_PARAMS
 # --- EDIT THIS: the dataset root to test against -------------------------
 # A directory containing segmentation_output/ with the stage-6 converted
 # tracks. This is the ONLY line that is machine-specific.
-ROOT_DIRECTORY = r"D:\ME\Analysis_20_09"
+ROOT_DIRECTORY = "/media/general-max-riekeles/MMT_3/ME/Analysis_20_09"  # UPDATE THIS PATH
 
 # Which branches to check. "both" mirrors a full run; drop one if you only have
 # that branch's converted inputs on disk.
@@ -62,7 +62,14 @@ BRANCHES = ["corrected", "uncorrected"]
 
 # -------------------------------------------------------------------------
 
-TRACK_NAME_RE = re.compile(r"^(sh_\d+_)?t\d+$")
+# track names are sh_<suffix>_t<n>, or t<n> when there is no shortened_ dir. The
+# shortened-dir token is whatever follows "shortened_" (e.g. 5seconds, 10seconds),
+# so it is alphanumeric, not just digits.
+TRACK_NAME_RE = re.compile(r"^(sh_\w+_)?t\d+$")
+
+# When a systematic mismatch hits every row, cap how many per-file row failures we
+# record so one bad CSV can't emit thousands of near-identical lines.
+MAX_ROW_FAILURES_PER_FILE = 5
 EXPECTED_HEADER = extract.CSV_HEADER.rstrip("\n")
 NUM_COLUMNS = len(EXPECTED_HEADER.split(","))
 # metric columns that must parse as a float (nan is allowed and parses fine)
@@ -92,24 +99,30 @@ def check_csv(csv_path, failures):
         return False
 
     groupable = False
+    row_failures = []  # collected locally so we can cap them per file
     with open(csv_path, newline="", encoding="utf-8") as f:
         reader = csv.reader(f)
         next(reader)  # skip header
         for line_no, row in enumerate(reader, start=2):
             if len(row) != NUM_COLUMNS:
-                failures.append(f"{csv_path.name} line {line_no}: {len(row)} fields, "
-                                f"expected {NUM_COLUMNS}")
+                row_failures.append(f"{csv_path.name} line {line_no}: {len(row)} fields, "
+                                    f"expected {NUM_COLUMNS}")
                 continue
             if not TRACK_NAME_RE.match(row[0]):
-                failures.append(f"{csv_path.name} line {line_no}: bad track name {row[0]!r}")
+                row_failures.append(f"{csv_path.name} line {line_no}: bad track name {row[0]!r}")
             for idx in FLOAT_COLUMNS:
                 try:
                     float(row[idx])
                 except ValueError:
-                    failures.append(f"{csv_path.name} line {line_no}: non-numeric value "
-                                    f"{row[idx]!r} in column {idx}")
+                    row_failures.append(f"{csv_path.name} line {line_no}: non-numeric value "
+                                        f"{row[idx]!r} in column {idx}")
             if row[2] and row[3]:  # Shortened_Dir and Experimental_Condition both set
                 groupable = True
+
+    failures.extend(row_failures[:MAX_ROW_FAILURES_PER_FILE])
+    if len(row_failures) > MAX_ROW_FAILURES_PER_FILE:
+        failures.append(f"{csv_path.name}: +{len(row_failures) - MAX_ROW_FAILURES_PER_FILE} "
+                        f"more row-level problem(s) not shown")
     return groupable
 
 
@@ -140,8 +153,13 @@ def run_branch(branch_name, root, base_tmp, results):
                            min_total_time_s=cfg.MIN_TOTAL_TIME_S,
                            min_direction_changes=cfg.MIN_DIRECTION_CHANGES)
     except Exception as exc:
+        # stage 7 is chatty; on a crash only the tail is useful for the traceback context.
         print(f"[FAIL] {branch_name}: stage 7 raised {type(exc).__name__}: {exc}")
-        print(buf.getvalue())
+        tail = buf.getvalue().splitlines()[-15:]
+        if tail:
+            print("    last stage-7 output:")
+            for line in tail:
+                print(f"      {line}")
         results.append((branch_name, "FAIL"))
         return
 
@@ -169,10 +187,10 @@ def run_branch(branch_name, root, base_tmp, results):
 
     status = "PASS" if not failures else "FAIL"
     print(f"[{status}] {branch_name}: {len(produced)} experiment CSV(s), {summaries} summary file(s)")
-    if failures:
-        print(buf.getvalue())
-        for msg in failures:
-            print(f"    - {msg}")
+    # Only the structural failures are printed - not stage 7's (voluminous) stdout,
+    # which would bury them.
+    for msg in failures:
+        print(f"    - {msg}")
     results.append((branch_name, status))
 
 

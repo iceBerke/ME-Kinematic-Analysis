@@ -174,7 +174,8 @@ offered. The superseded per-branch scripts (`final_kin_param_extraction_v3.py` /
 
 **Regression test.** `kinematics/test_stage7_structure.py` runs stage 7 against a real
 dataset and checks the *structure* of the output it produces — the right set of CSV and
-summary files, correct CSV columns, well-formed rows — but not the metric values, so it
+summary files, correct CSV columns, well-formed rows (field count, `sh_<suffix>_t<n>` track
+names such as `sh_5seconds_t1`, numeric metric columns) — but not the metric values, so it
 stays valid as you change the analysis. Point its top-of-file `ROOT_DIRECTORY` at a
 dataset root and run `python test_stage7_structure.py`; it writes into a temporary folder
 outside your data (leaving any existing `processed_results[_2]/` untouched) and cleans up,

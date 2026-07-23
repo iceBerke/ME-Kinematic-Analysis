@@ -65,7 +65,9 @@ def find_shortened_dir(session_path):
 
 
 def build_track_name(shortened_dir, index):
-    """Simplified track identifier: sh_<N>_t<index> (or t<index> if no shortened dir)."""
+    """Simplified track identifier: sh_<suffix>_t<index> where <suffix> is the
+    shortened_ dir's suffix (e.g. shortened_5seconds -> sh_5seconds_t1); just
+    t<index> when there is no shortened_ dir."""
     if shortened_dir:
         shortened_prefix = shortened_dir.replace('shortened_', 'sh_')
         return f"{shortened_prefix}_t{index}"
