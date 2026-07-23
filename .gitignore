@@ -17,6 +17,9 @@ env/
 .DS_Store
 Thumbs.db
 
+# Claude Code local settings (machine-specific permissions)
+.claude/
+
 # Machine-specific settings remembered between kinematic-analysis runs
 kinematics/.kin_last_run.json
 

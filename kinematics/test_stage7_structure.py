@@ -54,7 +54,7 @@ from kin_metrics import DEFAULT_PARAMS
 # --- EDIT THIS: the dataset root to test against -------------------------
 # A directory containing segmentation_output/ with the stage-6 converted
 # tracks. This is the ONLY line that is machine-specific.
-ROOT_DIRECTORY = "/media/general-max-riekeles/MMT_3/ME/Analysis_20_09"  # UPDATE THIS PATH
+ROOT_DIRECTORY = r"C:\Users\berke.santos\Documents\TUB\ME\Results\Root-latest"  # UPDATE THIS PATH
 
 # Which branches to check. "both" mirrors a full run; drop one if you only have
 # that branch's converted inputs on disk.
