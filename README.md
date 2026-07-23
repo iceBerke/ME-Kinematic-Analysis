@@ -74,6 +74,7 @@ not meant to be run.)
 | `alignment_1/time_coordinates_conversions_v2.py`, `alignment_2/time_coordinates_conversions_v3.py` | `ROOT_DIRECTORY` | dataset root |
 | `alignment_1/mhi_overlay_copies_v1.py`, `alignment_2/mhi_overlay_copies_v2.py` | `root_directory_path` | dataset root |
 | `kinematics/test_stage7_structure.py` | `ROOT_DIRECTORY` | dataset root (structural regression test) |
+| `kinematics/demo_test_stage7.py` | — | none (self-contained demo, no paths to edit) |
 | `segmentation_checks/error_analysis_v1.py`, `error_analysis_v3.py` | `root_folder` | one experiment folder under `segmentation_output/` |
 | `segmentation_corrections/correction_v1.py`, `_v2.py`, `_v3.py` | `image_path` | a single track PNG (`t<N>.png`) |
 | `segmentation_corrections/correction_v4.py` | `output_file` (plus the hand-listed input PNGs in the script) | the merged-output PNG path |
@@ -180,6 +181,10 @@ stays valid as you change the analysis. Point its top-of-file `ROOT_DIRECTORY` a
 dataset root and run `python test_stage7_structure.py`; it writes into a temporary folder
 outside your data (leaving any existing `processed_results[_2]/` untouched) and cleans up,
 exiting 0 on pass and 1 on failure.
+
+To sanity-check the test itself without any data, run `python demo_test_stage7.py` — it
+builds a synthetic dataset in a temp folder and shows the test passing on good output and
+catching broken output (wrong header, bad track name, non-numeric cell, wrong field count).
 
 ## Repository structure
 
