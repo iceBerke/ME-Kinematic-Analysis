@@ -185,6 +185,9 @@ exiting 0 on pass and 1 on failure.
 To sanity-check the test itself without any data, run `python demo_test_stage7.py` — it
 builds a synthetic dataset in a temp folder and shows the test passing on good output and
 catching broken output (wrong header, bad track name, non-numeric cell, wrong field count).
+Add `--keep <dir>` to materialise that synthetic tree (both the `segmentation_output/`
+inputs and the `processed_results[_2]/` outputs) under `<dir>/SyntheticRoot`, print it, and
+leave it on disk to browse instead of building it in a temp folder and deleting it.
 
 ## Repository structure
 

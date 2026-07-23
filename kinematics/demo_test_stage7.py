@@ -11,19 +11,29 @@
 #     cd kinematics
 #     python demo_test_stage7.py
 #
-# It writes only into temporary folders (removed at the end) and touches nothing
-# in the repo or under any real dataset. Exit code is 0 if the test behaved
-# correctly in every case, 1 otherwise.
+# By default it writes only into temporary folders (removed at the end) and
+# touches nothing in the repo or under any real dataset. Exit code is 0 if the
+# test behaved correctly in every case, 1 otherwise.
 #
-# Two parts:
+# To actually SEE the fabricated dataset instead of it being built-and-deleted,
+# point --keep at a folder: it materialises the synthetic tree there - both the
+# segmentation_output/ inputs AND the stage-7 processed_results[_2]/ outputs -
+# prints the directory tree, and leaves it on disk for you to browse:
+#
+#     python demo_test_stage7.py --keep ./demo_tree
+#
+# Two parts (both always run):
 #   PART A - positive, end-to-end. Build a valid synthetic dataset for both
 #            branches and run the test's run_branch(); expect PASS for each.
 #   PART B - negative, checker-level. Hand-write good and broken CSVs and feed
 #            them to the test's check_csv(); expect the broken ones to be caught.
 #
+import argparse
+import io
 import shutil
 import sys
 import tempfile
+from contextlib import redirect_stdout
 from pathlib import Path
 
 import numpy as np
@@ -33,6 +43,10 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import test_stage7_structure as struct  # the real test - we reuse its functions
+import kin_config as cfg
+import extract_track_metrics as extract
+import summarize_track_metrics as summarize
+from kin_metrics import DEFAULT_PARAMS
 
 # ---------------------------------------------------------------------------
 # Synthetic dataset definition (Part A)
@@ -84,6 +98,49 @@ def build_synthetic_root(root):
                 for k in range(1, TRACKS_PER_RECORDING + 1):
                     track = make_track(n_points=20 + k, step=1.0 + 0.1 * k)
                     np.save(aligned / f"aligned_blobs_t{k}_converted.npy", track)
+
+
+def _print_tree(path, prefix=""):
+    """Print a directory tree (ASCII only, so it is safe on a Windows console)."""
+    entries = sorted(path.iterdir(), key=lambda p: (p.is_file(), p.name))
+    for i, entry in enumerate(entries):
+        last = i == len(entries) - 1
+        conn = "\\-- " if last else "|-- "
+        if entry.is_dir():
+            print(f"{prefix}{conn}{entry.name}/")
+            _print_tree(entry, prefix + ("    " if last else "|   "))
+        else:
+            print(f"{prefix}{conn}{entry.name}  ({entry.stat().st_size} B)")
+
+
+def materialize_tree(keep_dir):
+    """Build the synthetic dataset AND its stage-7 output under keep_dir, leave it
+    on disk, and print the resulting tree. This is the '--keep' view: input and
+    output sit together exactly as in a real processed dataset root."""
+    root = (Path(keep_dir).expanduser().resolve()) / "SyntheticRoot"
+    shutil.rmtree(root, ignore_errors=True)
+    build_synthetic_root(root)
+
+    # Run stage 7 for both branches, writing into the root's own
+    # processed_results[_2]/ (not a temp dir), so the kept tree shows the outputs
+    # too. Stage 7 is chatty - swallow its stdout, we only want the tree below.
+    for branch_name in ("corrected", "uncorrected"):
+        branch = cfg.settings(branch_name, root)
+        with redirect_stdout(io.StringIO()):
+            extract.main(root, branch["input_subdir"], branch["results_dir_name"],
+                         dict(DEFAULT_PARAMS), banner=None)
+            summarize.main(branch["results_dir"], title_suffix=branch["title_suffix"],
+                           extra_note=branch["extra_note"],
+                           min_total_time_s=cfg.MIN_TOTAL_TIME_S,
+                           min_direction_changes=cfg.MIN_DIRECTION_CHANGES)
+
+    print("MATERIALIZED SYNTHETIC TREE (segmentation_output inputs + stage-7 output)")
+    print("=" * 60)
+    print(root.name + "/")
+    _print_tree(root)
+    print(f"\nLeft on disk at: {root}")
+    print("(summary_statistics.txt files are UTF-8 and contain 'u' for micro; "
+          "open them in an editor rather than echoing to a cp1252 console.)")
 
 
 def part_a():
@@ -161,7 +218,19 @@ def part_b():
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Self-check / demo for the stage-7 structural test.")
+    parser.add_argument(
+        "--keep", metavar="DIR", default=None,
+        help="Materialise the synthetic dataset (inputs + stage-7 output) under "
+             "DIR/SyntheticRoot, print its tree, and leave it on disk to browse. "
+             "Without this, everything is built in a temp folder and deleted.")
+    args = parser.parse_args()
+
     print("Demo of the stage-7 structural test - no real data required.\n")
+    if args.keep:
+        materialize_tree(args.keep)
+        print()
     a_ok = part_a()
     b_ok = part_b()
     print("\n" + "=" * 60)
