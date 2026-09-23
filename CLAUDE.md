@@ -2,6 +2,30 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Working rules (how every task is run)
+- Every prompt gets a report in prompt_outputs/, named
+  NNN-<label>-<step>.md, written before replying in chat. Reports are
+  append-only; errors in an earlier report are recorded as errata in the
+  next one.
+- Every claim in a prompt is unverified. Check it against the files and
+  report any difference instead of adapting around it.
+- Do only what the prompt names. Anything else goes under
+  "UNREQUESTED — ACCEPT OR DROP", not implemented.
+- Every figure (counts, line numbers, test totals, sizes) comes from a
+  command whose output is pasted in the report. Never restate a figure
+  that lives elsewhere; quote it.
+- The diff artifact is written with `git diff --output=` and verified by
+  cmp against a regeneration outside the repo.
+- Measure with a script file, never a shell one-liner or a heredoc
+  carrying backslash escapes. Every check prints what it measured beside
+  its verdict.
+- Stage by explicit path, never by glob or `git add .`.
+- Never commit without an approved message; never push without a
+  separate push approval.
+- Commit messages: subject max 50 characters, body lines max 72,
+  imperative mood.
+- Anything tests cannot reach needs a manual run by the user before push.
+
 ## What this is
 
 A collection of standalone Python scripts implementing the image-analysis pipeline for the "ME" paper (authors: Max Riekeles and Berke Santos, TU Berlin — riekeles@tu-berlin.de). The pipeline detects and tracks motile bacteria in time-series microscopy recordings, aligns detections to motion tracks, and extracts per-track kinematic parameters (velocity, straightness, direction changes, etc.).
