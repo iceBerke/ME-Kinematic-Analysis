@@ -64,3 +64,18 @@ The repository currently holds **8 CRLF and 41 LF** tracked text files, has no
 
 *Why deferred:* normalising would produce a large whitespace-only diff, and
 mixing that with content changes would make both unreviewable.
+
+## Superseded stage-7 scripts
+
+**`final_kin_param_extraction_v3.py` and `_v4.py` stay in `archive/`.** They
+are not moved into `alignment_1/` or `alignment_2/`, nor into `archive/`
+subfolders inside them.
+
+*Why:* both were stage 7 and were superseded by the `kinematics/` stage, so
+nothing in the alignment directories uses them. Those directories are live run
+directories — the alignment, overlay, conversion and overlay-collect steps run
+from them — and every script in them is in live use, so moving the old scripts
+back would put dead code among live scripts. Both lived in `alignment_1/` and
+`alignment_2/` until `52c7a42` archived them; moving them back for
+self-containment was tried in task 000 and reverted before commit
+(`prompt_outputs/001-bootstrap-gate.md`, R6).
