@@ -25,12 +25,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Commit messages: subject max 50 characters, body lines max 72,
   imperative mood.
 - Anything tests cannot reach needs a manual run by the user before push.
+- Project decisions are recorded in DECISIONS.md, and recurring mistakes
+  in GOTCHAS.md.
 
 ## What this is
 
 A collection of standalone Python scripts implementing the image-analysis pipeline for the "ME" paper (authors: Max Riekeles and Berke Santos, TU Berlin — riekeles@tu-berlin.de). The pipeline detects and tracks motile bacteria in time-series microscopy recordings, aligns detections to motion tracks, and extracts per-track kinematic parameters (velocity, straightness, direction changes, etc.).
 
-There is no package, no build, no test suite, and no CLI. Each `.py` file is a self-contained batch script run directly with `python <script>.py`. **All configuration lives in hard-coded constants inside the `if __name__ == "__main__":` block (or module-level constants near the top) — there are no command-line arguments.** To run anything you edit the `root_directory` (and related paths/parameters) at the bottom of the file, then execute it.
+There is no package, no build, no **automated** test suite, and no CLI — the only tests are two hand-run scripts in `kinematics/`: `test_stage7_structure.py`, which needs a real dataset root, and `demo_test_stage7.py`, which is synthetic and needs no data. Each `.py` file is a self-contained batch script run directly with `python <script>.py`. **All configuration lives in hard-coded constants inside the `if __name__ == "__main__":` block (or module-level constants near the top) — there are no command-line arguments.** To run anything you edit the `root_directory` (and related paths/parameters) at the bottom of the file, then execute it.
 
 Environment note: paths in the scripts are Linux (`/media/general-max-riekeles/MMT_3/ME/...`), but the working machine is Windows. Expect to rewrite `root_directory` for the local OS before running.
 
@@ -45,9 +47,9 @@ Dependencies are in `requirements.txt` (`pip install -r requirements.txt`): `ope
 
 ## Versioned scripts
 
-Many scripts exist as `_v1`/`_v2`/`_v3`/`_v4`/`_v5` (and `_part1`/`_complete`) variants. **The highest version number is the current one**; lower versions are kept for history. When editing behavior, edit the latest version unless explicitly told otherwise.
+Many scripts exist as `_v1`/`_v2`/`_v3`/`_v4`/`_v5` (and `_part1`/`_complete`) variants. **The highest version number is the current one unless this file says otherwise**; lower versions are kept for history. When editing behavior, edit the latest version unless explicitly told otherwise. Two sections do say otherwise, both deliberately: `segmentation_checks/` keeps `error_analysis_v1.py` alongside `_v3.py` because the two flag different defects, and the `segmentation_corrections/` scripts `correction_v1`–`_v4` are not a version progression at all — each solves a different segmentation defect.
 
-Superseded scripts have been moved to `archive/`. The current blob detector is **`blob_detection_v3_memory_optimized.py`** (batch processing, `gc.collect()` between batches, per-experiment error tracking + `processing_summary`, psutil memory monitoring). Note its traversal walks the **`segmentation_output/` tree** and only processes recordings that already have a segmentation folder — recordings not yet in `segmentation_output` are silently skipped. The archived `_ME_complete`/`_v2` variants are the same 6-column detector but simpler (no batching/error-tracking) and walk the **data** tree instead; the archived `_part1` is the obsolete first generation that emits only 4 columns (`x,y,t,size`) with no brightness/solidity and is incompatible with the rest of the pipeline.
+Superseded scripts have been moved to `archive/`. The current blob detector is **`blob_detection_v3_memory_optimized.py`** (batch processing, `gc.collect()` between batches, per-experiment error tracking + `processing_summary`, psutil memory monitoring). Note its traversal walks the **`segmentation_output/` tree** and only processes recordings that already have a segmentation folder — recordings not yet in `segmentation_output` are silently skipped. The archived `_ME_complete`/`_v2` variants are the same 6-column detector but simpler (no batching/error-tracking) and walk the **data** tree instead; the archived `_part1` is the obsolete first generation that emits only 4 columns (`x,y,t,size`) with no brightness/solidity and is incompatible with the rest of the pipeline. Archived variants are referred to throughout this file by their version suffix (`_v1`, `_v2`, `_ME_complete`, `_part1`, …) rather than by full filename; the files themselves are listed in `archive/`.
 
 ## The pipeline (data flow)
 
@@ -114,7 +116,7 @@ Deliberate differences from v3/v4 (everything else is numerically identical — 
 
 - **CSV gained two columns** — `Shortened_Dir` and `Experimental_Condition`, so stage 7b can group without re-walking the tree. CSVs written by the old scripts are therefore rejected by `summarize_track_metrics.py` with a message telling you to re-run 7a.
 - **CSV metric columns now carry 6 decimals instead of 3** — the summary now averages the CSV values rather than in-memory floats, and 3 decimals would round-trip into the report.
-- **Encoding fixes.** The old scripts write `μ` to the summary with the platform default encoding, which **crashes on Windows** (cp1252); and their `SPEED FILTER` progress line also contains `μ`, so on a Windows console that `print` raised `UnicodeEncodeError` inside the `try`, and the bare `except` logged every speed-filtered track as a failed track. The new code opens report/CSV files with `encoding='utf-8'` and keeps console output ASCII.
+- **Encoding fixes.** The old scripts write a mu character to the summary with the platform default encoding, which **crashes on Windows** (cp1252): they use U+03BC GREEK SMALL LETTER MU, which cp1252 cannot encode, rather than U+00B5 MICRO SIGN, which it can. Their `SPEED FILTER` progress line carries the same character, so on a Windows console that `print` raised `UnicodeEncodeError` inside the `try`, and the bare `except` logged every speed-filtered track as a failed track. The new code opens report/CSV files with `encoding='utf-8'` and keeps console output ASCII.
 - The unused `filtered_t` variable was dropped.
 
 ### `segmentation_checks/` — batch QA of segmentation output
@@ -126,7 +128,7 @@ Run on a segmentation-output tree (`shortened_*/…/t<number>.png`); each writes
 
 ### `segmentation_corrections/` — manual per-image track fix-ups
 
-These are **run by hand on a single hard-coded image path** (not part of the automated batch) to correct a track that stage-1 segmentation got wrong. They are **not a version progression** — each solves a *different* segmentation defect, so all three are kept:
+These are **run by hand on a single hard-coded image path** (not part of the automated batch) to correct a track that stage-1 segmentation got wrong. They are **not a version progression** — each solves a *different* segmentation defect, so all four are kept:
 
 - **`correction_v1.py`** (`separate_tracks_simple`) — **split** an image into its 8-connectivity connected components (each ≥ `min_area`), saved as `_1, _2, …`. Use when tracks are already physically separate. Its function is copied verbatim inside v2.
 - **`correction_v2.py`** (`separate_tracks_with_grouping`) — the **opposite: merge**. DBSCAN-groups nearby disconnected components (`grouping_distance`) back into a single track. Use when one track was shattered into fragments. (Requires `sklearn`.)

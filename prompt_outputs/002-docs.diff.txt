@@ -1,0 +1,2495 @@
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 5a130c9..1cb0a1d 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -25,12 +25,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
+ - Commit messages: subject max 50 characters, body lines max 72,
+   imperative mood.
+ - Anything tests cannot reach needs a manual run by the user before push.
++- Project decisions are recorded in DECISIONS.md, and recurring mistakes
++  in GOTCHAS.md.
+ 
+ ## What this is
+ 
+ A collection of standalone Python scripts implementing the image-analysis pipeline for the "ME" paper (authors: Max Riekeles and Berke Santos, TU Berlin — riekeles@tu-berlin.de). The pipeline detects and tracks motile bacteria in time-series microscopy recordings, aligns detections to motion tracks, and extracts per-track kinematic parameters (velocity, straightness, direction changes, etc.).
+ 
+-There is no package, no build, no test suite, and no CLI. Each `.py` file is a self-contained batch script run directly with `python <script>.py`. **All configuration lives in hard-coded constants inside the `if __name__ == "__main__":` block (or module-level constants near the top) — there are no command-line arguments.** To run anything you edit the `root_directory` (and related paths/parameters) at the bottom of the file, then execute it.
++There is no package, no build, no **automated** test suite, and no CLI — the only tests are two hand-run scripts in `kinematics/`: `test_stage7_structure.py`, which needs a real dataset root, and `demo_test_stage7.py`, which is synthetic and needs no data. Each `.py` file is a self-contained batch script run directly with `python <script>.py`. **All configuration lives in hard-coded constants inside the `if __name__ == "__main__":` block (or module-level constants near the top) — there are no command-line arguments.** To run anything you edit the `root_directory` (and related paths/parameters) at the bottom of the file, then execute it.
+ 
+ Environment note: paths in the scripts are Linux (`/media/general-max-riekeles/MMT_3/ME/...`), but the working machine is Windows. Expect to rewrite `root_directory` for the local OS before running.
+ 
+@@ -45,9 +47,9 @@ Dependencies are in `requirements.txt` (`pip install -r requirements.txt`): `ope
+ 
+ ## Versioned scripts
+ 
+-Many scripts exist as `_v1`/`_v2`/`_v3`/`_v4`/`_v5` (and `_part1`/`_complete`) variants. **The highest version number is the current one**; lower versions are kept for history. When editing behavior, edit the latest version unless explicitly told otherwise.
++Many scripts exist as `_v1`/`_v2`/`_v3`/`_v4`/`_v5` (and `_part1`/`_complete`) variants. **The highest version number is the current one unless this file says otherwise**; lower versions are kept for history. When editing behavior, edit the latest version unless explicitly told otherwise. Two sections do say otherwise, both deliberately: `segmentation_checks/` keeps `error_analysis_v1.py` alongside `_v3.py` because the two flag different defects, and the `segmentation_corrections/` scripts `correction_v1`–`_v4` are not a version progression at all — each solves a different segmentation defect.
+ 
+-Superseded scripts have been moved to `archive/`. The current blob detector is **`blob_detection_v3_memory_optimized.py`** (batch processing, `gc.collect()` between batches, per-experiment error tracking + `processing_summary`, psutil memory monitoring). Note its traversal walks the **`segmentation_output/` tree** and only processes recordings that already have a segmentation folder — recordings not yet in `segmentation_output` are silently skipped. The archived `_ME_complete`/`_v2` variants are the same 6-column detector but simpler (no batching/error-tracking) and walk the **data** tree instead; the archived `_part1` is the obsolete first generation that emits only 4 columns (`x,y,t,size`) with no brightness/solidity and is incompatible with the rest of the pipeline.
++Superseded scripts have been moved to `archive/`. The current blob detector is **`blob_detection_v3_memory_optimized.py`** (batch processing, `gc.collect()` between batches, per-experiment error tracking + `processing_summary`, psutil memory monitoring). Note its traversal walks the **`segmentation_output/` tree** and only processes recordings that already have a segmentation folder — recordings not yet in `segmentation_output` are silently skipped. The archived `_ME_complete`/`_v2` variants are the same 6-column detector but simpler (no batching/error-tracking) and walk the **data** tree instead; the archived `_part1` is the obsolete first generation that emits only 4 columns (`x,y,t,size`) with no brightness/solidity and is incompatible with the rest of the pipeline. Archived variants are referred to throughout this file by their version suffix (`_v1`, `_v2`, `_ME_complete`, `_part1`, …) rather than by full filename; the files themselves are listed in `archive/`.
+ 
+ ## The pipeline (data flow)
+ 
+@@ -114,7 +116,7 @@ Deliberate differences from v3/v4 (everything else is numerically identical —
+ 
+ - **CSV gained two columns** — `Shortened_Dir` and `Experimental_Condition`, so stage 7b can group without re-walking the tree. CSVs written by the old scripts are therefore rejected by `summarize_track_metrics.py` with a message telling you to re-run 7a.
+ - **CSV metric columns now carry 6 decimals instead of 3** — the summary now averages the CSV values rather than in-memory floats, and 3 decimals would round-trip into the report.
+-- **Encoding fixes.** The old scripts write `μ` to the summary with the platform default encoding, which **crashes on Windows** (cp1252); and their `SPEED FILTER` progress line also contains `μ`, so on a Windows console that `print` raised `UnicodeEncodeError` inside the `try`, and the bare `except` logged every speed-filtered track as a failed track. The new code opens report/CSV files with `encoding='utf-8'` and keeps console output ASCII.
++- **Encoding fixes.** The old scripts write a mu character to the summary with the platform default encoding, which **crashes on Windows** (cp1252): they use U+03BC GREEK SMALL LETTER MU, which cp1252 cannot encode, rather than U+00B5 MICRO SIGN, which it can. Their `SPEED FILTER` progress line carries the same character, so on a Windows console that `print` raised `UnicodeEncodeError` inside the `try`, and the bare `except` logged every speed-filtered track as a failed track. The new code opens report/CSV files with `encoding='utf-8'` and keeps console output ASCII.
+ - The unused `filtered_t` variable was dropped.
+ 
+ ### `segmentation_checks/` — batch QA of segmentation output
+@@ -126,7 +128,7 @@ Run on a segmentation-output tree (`shortened_*/…/t<number>.png`); each writes
+ 
+ ### `segmentation_corrections/` — manual per-image track fix-ups
+ 
+-These are **run by hand on a single hard-coded image path** (not part of the automated batch) to correct a track that stage-1 segmentation got wrong. They are **not a version progression** — each solves a *different* segmentation defect, so all three are kept:
++These are **run by hand on a single hard-coded image path** (not part of the automated batch) to correct a track that stage-1 segmentation got wrong. They are **not a version progression** — each solves a *different* segmentation defect, so all four are kept:
+ 
+ - **`correction_v1.py`** (`separate_tracks_simple`) — **split** an image into its 8-connectivity connected components (each ≥ `min_area`), saved as `_1, _2, …`. Use when tracks are already physically separate. Its function is copied verbatim inside v2.
+ - **`correction_v2.py`** (`separate_tracks_with_grouping`) — the **opposite: merge**. DBSCAN-groups nearby disconnected components (`grouping_distance`) back into a single track. Use when one track was shattered into fragments. (Requires `sklearn`.)
+diff --git a/DECISIONS.md b/DECISIONS.md
+new file mode 100644
+index 0000000..3583105
+--- /dev/null
++++ b/DECISIONS.md
+@@ -0,0 +1,66 @@
++# DECISIONS
++
++Project decisions that would otherwise be re-litigated, each with its reason.
++Recurring mistakes live in [GOTCHAS.md](GOTCHAS.md).
++
++## Tests
++
++**There is no automated test suite.** Two test scripts exist, and both are run
++by hand, from `kinematics/`:
++
++- `test_stage7_structure.py` — needs a real dataset root, set in its
++  top-of-file `ROOT_DIRECTORY`.
++- `demo_test_stage7.py` — synthetic, needs no data at all.
++
++**Rule.** A task that touches `kinematics/` runs `demo_test_stage7.py` before
++push, and `test_stage7_structure.py` as well when a dataset root is available.
++Everything else in this repository is manual-test-only.
++
++*Why:* the pipeline is a set of standalone batch scripts over a large dataset
++that does not live in the repository, so there is nothing for an automated
++suite to run against. Stage 7 is the exception — it was split into importable
++modules — which is why it alone has test scripts, and why they are still
++hand-run rather than wired into anything.
++
++## `prompt_outputs/`
++
++**Tracked** — both the `.md` reports and the `.diff.txt` artifacts.
++
++*Why:* they are the audit trail for a cleanup being done ahead of publication.
++A record of what was changed, checked and ruled on only has value if it is
++versioned alongside the changes it describes.
++
++## Commit trailers
++
++**Supersedes the ruling recorded as R5 in
++`prompt_outputs/001-bootstrap-gate.md`,** which required two trailers.
++
++Every commit carries **exactly one trailer**:
++
++```
++Co-Authored-By: <the model running the session> <noreply@anthropic.com>
++```
++
++The approved commit message never includes it. **COMMIT** appends it. **PUSH**
++verifies that exactly one `Co-Authored-By` trailer is present, but does **not**
++check which model it names — that value is whatever Claude Code supplied at
++commit time and is not the author's to approve.
++
++**The `Claude-Session` trailer is dropped.** Its value is not obtainable from
++inside a session: a session exposes only a UUID, while the trailer URLs used a
++`session_01…` identifier, and nothing maps one to the other. Requiring it
++blocked a commit outright, as `prompt_outputs/001-bootstrap-commit.md` records.
++
++*Note:* nothing in the repository enforces any of this — there is no
++`commit.template`, no `prepare-commit-msg` hook and no `trailer.*` config — so
++each COMMIT step names the trailer deliberately.
++
++## Line endings
++
++**Deferred to its own task.** Nothing in this cleanup normalises line endings.
++
++The repository currently holds **8 CRLF and 41 LF** tracked text files, has no
++`.gitattributes`, and runs with `core.autocrlf=true`.
++
++*Why deferred:* normalising would produce a large whitespace-only diff, and
++mixing that with content changes would make both unreviewable.
+diff --git a/GOTCHAS.md b/GOTCHAS.md
+new file mode 100644
+index 0000000..c52fa85
+--- /dev/null
++++ b/GOTCHAS.md
+@@ -0,0 +1,39 @@
++# GOTCHAS
++
++Mistakes that have already cost a round of work here, and what to do instead.
++Project decisions live in [DECISIONS.md](DECISIONS.md).
++
++## `git log --format=%B` is not the stored commit message
++
++**What went wrong.** A byte-for-byte comparison of a commit message against the
++approved text reported a difference at the last line. The message was correct;
++the comparison was not. `git log -1 --format=%B` terminates its *output* with a
++newline that is not part of the stored message, so the extracted text came back
++one byte longer than the approved file and the comparison failed.
++
++**What to do instead.** Read the commit object and take everything after the
++first blank line:
++
++```bash
++git cat-file commit <ref>
++```
++
++Anything that compares a commit message byte for byte — against an approved
++text, or before and after an amend — must use this, not `--format=%B`.
++
++## `git commit --amend` always rewrites the committer date
++
++**What went wrong.** Amending a commit to append a trailer changed more than
++the message: the committer timestamp moved too, which is why `git commit
++--amend` then printed a `Date:` line. Nothing was done wrong, but a check
++written to assert that "nothing but the message changed" would have failed on
++it.
++
++**What is and is not preserved.** Author name, author email and **author date**
++are preserved. The **tree hash is unchanged**, as is the parent. Only the
++**committer date** is rewritten, and it is rewritten on every amend, even when
++only the message changes.
++
++**What to do instead.** Verify an amend by comparing the tree hash, the parent,
++and the message — not the committer date. A check that compares committer dates
++will fail on any amended commit, and no flag avoids it.
+diff --git a/prompt_outputs/001-bootstrap-commit-2.md b/prompt_outputs/001-bootstrap-commit-2.md
+new file mode 100644
+index 0000000..6746d33
+--- /dev/null
++++ b/prompt_outputs/001-bootstrap-commit-2.md
+@@ -0,0 +1,367 @@
++# 001 — bootstrap — commit (second attempt)
++
++**COMMITTED.** `9ff3abde0f78b501426d1614db6a8e8065ce68b0`, one ahead of
++`origin/main`. **Not pushed.**
++
++The commit carries the approved message and **nothing else — no trailers at
++all.** Claude Code appended none, and none were added by hand, per this
++prompt's amended R5. Details and evidence in §3.
++
++**No test script was run.** Per ruling R1 there is no automated test suite;
++check 6 confirms by command that no `kinematics/` path is staged.
++
++This report is untracked and rides with the next task's commit. The diff
++artifact was not regenerated. Carried reports — `001-bootstrap-implement.md`,
++`001-bootstrap-gate.md`, `001-bootstrap-commit.md` — were not edited.
++
++Scripts used, all outside the repository:
++
++```
++check_staged.py     staged set vs the gate report and vs this prompt's claims
++verify_commit.py    trailer extraction, byte comparison, 50/72 measurement
++```
++
++---
++
++## 1. PRE-COMMIT CHECKS — ALL SIX PASS
++
++Re-run from scratch, as instructed, since the tree may have moved.
++
++### Check 1 — base commit
++
++```
++=== CHECK 1: base commit ===
++68cbcf31d98129a69a2b58ee626bd5c274a39ca7
++demo_test_stage7.py: add --keep to materialise the synthetic tree on disk
++
++## main...origin/main
++M  CLAUDE.md
++A  prompt_outputs/001-bootstrap-gate.md
++A  prompt_outputs/001-bootstrap-implement.md
++A  prompt_outputs/001-bootstrap.diff.txt
++?? prompt_outputs/001-bootstrap-commit.md
++
++=== ahead/behind (left=behind right=ahead) ===
++0	0
++```
++
++The claimed base `68cbcf31d98129a69a2b58ee626bd5c274a39ca7` is correct, on
++`main`, zero ahead and zero behind.
++
++### Check 2 — staged set
++
++```
++=== CHECK 2: staged set ===
++On branch main
++Your branch is up to date with 'origin/main'.
++
++Changes to be committed:
++  (use "git restore --staged <file>..." to unstage)
++	modified:   CLAUDE.md
++	new file:   prompt_outputs/001-bootstrap-gate.md
++	new file:   prompt_outputs/001-bootstrap-implement.md
++	new file:   prompt_outputs/001-bootstrap.diff.txt
++
++Untracked files:
++  (use "git add <file>..." to include in what will be committed)
++	prompt_outputs/001-bootstrap-commit.md
++
++
++=== git diff --cached --numstat ===
++24	0	CLAUDE.md
++439	0	prompt_outputs/001-bootstrap-gate.md
++821	0	prompt_outputs/001-bootstrap-implement.md
++1307	0	prompt_outputs/001-bootstrap.diff.txt
++```
++
++Checked by command with `check_staged.py`, which treats this prompt's four
++figures as claims:
++
++```
++measured: staged paths = 4
++measured: unexpected staged paths = 0 []
++measured: missing staged paths    = 0 []
++VERDICT: staged set is exactly the four named paths
++
++measured: change type per path
++    M   CLAUDE.md
++    A   prompt_outputs/001-bootstrap-gate.md
++    A   prompt_outputs/001-bootstrap-implement.md
++    A   prompt_outputs/001-bootstrap.diff.txt
++VERDICT: CLAUDE.md is a modification, the other three are additions
++
++measured: paths with non-zero removals = []
++VERDICT: every staged path has 0 removed lines
++
++  OK     claimed=    24  actual=    24   CLAUDE.md
++  OK     claimed=   439  actual=   439   prompt_outputs/001-bootstrap-gate.md
++  OK     claimed=   821  actual=   821   prompt_outputs/001-bootstrap-implement.md
++  OK     claimed=  1307  actual=  1307   prompt_outputs/001-bootstrap.diff.txt
++
++measured: rows differing from the prompt's claim = 0
++VERDICT: all four claimed figures match the staged reality
++```
++
++All four claimed figures are correct.
++
++### Check 3 — nothing else
++
++```
++=== CHECK 3: porcelain -uall ===
++M  CLAUDE.md
++A  prompt_outputs/001-bootstrap-gate.md
++A  prompt_outputs/001-bootstrap-implement.md
++A  prompt_outputs/001-bootstrap.diff.txt
++?? prompt_outputs/001-bootstrap-commit.md
++```
++
++Nothing else staged or modified. Exactly one untracked file,
++`prompt_outputs/001-bootstrap-commit.md`, the stopped attempt's report — as the
++prompt predicted. This report did not exist at check time; it was written after
++the commit, so it could not perturb any check. Nothing new was staged.
++
++### Check 4 — artifact
++
++```
++=== CHECK 4: artifact vs OUTSIDE regeneration ===
++regeneration exit=0
++cmp: EXIT 0 - identical
++(in-repo artifact not overwritten)
++```
++
++Regeneration written only to the scratchpad; the in-repo artifact was neither
++regenerated nor overwritten.
++
++### Check 5 — CLAUDE.md
++
++```
++=== CHECK 5: CLAUDE.md diff vs HEAD ===
++24	0	CLAUDE.md
++hunk count: 1
++@@ -2,6 +2,30 @@
++deleted lines: 0
++```
++
++Exactly one hunk, 24 added, 0 deleted. Hunk header: `@@ -2,6 +2,30 @@`.
++
++### Check 6 — tests
++
++```
++measured: staged paths under kinematics/ = 0 []
++VERDICT: no kinematics/ path is staged; no test script was run
++```
++
++**No test script was run in this task.**
++
++---
++
++## 2. THE MESSAGE WAS UNCHANGED BEFORE COMMITTING
++
++The approved text was written to a fresh file from this prompt and compared
++against the file approved at the gate step:
++
++```
++=== approved text this prompt gave  vs  the file approved at the gate step ===
++cmp: EXIT 0 - identical (message unchanged since gate approval)
++
++=== bytes / sha256 of the message file to be committed ===
++535 bytes
++2fec8fd6d0b6001c42d187d2c19be46b12f762fa677b1bcf410f5e02f9209769  approved_msg_001.txt
++
++=== non-ASCII bytes in the message? ===
++0 - pure ASCII apart from newlines
++```
++
++Committed with `git commit -F <that file>`. No `--no-verify`, no `--amend`, no
++history-rewriting flag.
++
++```
++[main 9ff3abd] Add working-rules section and task 001 reports
++ 4 files changed, 2591 insertions(+)
++ create mode 100644 prompt_outputs/001-bootstrap-gate.md
++ create mode 100644 prompt_outputs/001-bootstrap-implement.md
++ create mode 100644 prompt_outputs/001-bootstrap.diff.txt
++commit exit=0
++```
++
++---
++
++## 3. TRAILERS — NONE
++
++**The commit carries no trailer lines of any kind.** Quoted verbatim: there are
++none to quote.
++
++Asked of git itself, which knows the trailer grammar:
++
++```
++=== trailers as git itself parses them ===
++(no output above = no trailers in the commit)
++```
++
++and from the verification script:
++
++```
++measured: trailer lines git recognises = 0
++    (none - the commit carries no trailer of any kind)
++```
++
++Per the prompt this outcome is acceptable. For each possible trailer: **none was
++added automatically by Claude Code, and none was added by hand.** No model name
++and no session URL appear anywhere in the commit.
++
++Checked beforehand, nothing in the repository is configured to append anything:
++
++```
++--- commit.template ---
++(unset)
++--- core.hooksPath ---
++(unset)
++--- active (non-sample) hooks in .git/hooks ---
++(none listed above = no active hooks)
++--- trailer config ---
++(no trailer.* config)
++```
++
++So the empty result is explained, not merely observed: `git commit -F` writes
++the supplied file as the whole message, and there was no template, hook or
++`trailer.*` configuration to add more. This differs from every earlier commit in
++this repository, each of which carries `Co-Authored-By` and `Claude-Session`
++lines. Flagged as a difference, not adapted around — the amended R5 says to
++commit the approved message alone and report what happened, which is what this
++is.
++
++---
++
++## 4. POST-COMMIT CHECKS
++
++### The commit
++
++```
++=== git log -1 --format=%H%n%s%n%b ===
++9ff3abde0f78b501426d1614db6a8e8065ce68b0
++Add working-rules section and task 001 reports
++Insert the rules that govern every task at the top of CLAUDE.md, above
++the architecture reference, as a pure addition: one hunk, nothing that
++was already there is touched.
++
++Start prompt_outputs/ as the task record, holding the implement and
++gate reports for task 001 and the diff artifact they are verified
++against. Reports and artifacts are both tracked.
++
++Deferred to their own tasks: the CLAUDE.md content defects the
++inventory turned up, and .gitattributes line-ending normalisation.
++
++=== END ===
++```
++
++```
++=== git show --stat --oneline HEAD ===
++9ff3abd Add working-rules section and task 001 reports
++ CLAUDE.md                                 |   24 +
++ prompt_outputs/001-bootstrap-gate.md      |  439 ++++++++++
++ prompt_outputs/001-bootstrap-implement.md |  821 ++++++++++++++++++
++ prompt_outputs/001-bootstrap.diff.txt     | 1307 +++++++++++++++++++++++++++++
++ 4 files changed, 2591 insertions(+)
++```
++
++The per-file figures in the commit match the pre-commit numstat exactly.
++
++### Byte-identity with the approved text
++
++**How the comparison was made.** `git log -1 --format=%B` is *not* a faithful
++source: it terminates its output with a newline that is not part of the stored
++message, which made the first comparison read 536 bytes against the approved
++535 and report a spurious one-byte difference at line 13. The authoritative
++source is the commit object itself — `git cat-file commit HEAD`, everything
++after the first blank line — which is the message exactly as git stored it.
++That was written to a file and compared byte for byte, with no trailers to
++strip.
++
++```
++note: `git log --format=%B` emits 536 bytes, the stored message is 535; the difference is %B's output terminator
++
++measured: raw message bytes = 535
++measured: raw message lines = 12
++measured: trailer lines git recognises = 0
++measured: message-minus-trailers bytes = 535
++
++measured: approved bytes  = 535
++measured: committed bytes = 535
++VERDICT: BYTE-IDENTICAL to the approved text
++```
++
++Confirmed independently with `cmp` and `sha256sum`:
++
++```
++=== independent external cmp, stored message vs approved text ===
++cmp: EXIT 0 - identical
++2fec8fd6d0b6001c42d187d2c19be46b12f762fa677b1bcf410f5e02f9209769 *committed_msg_minus_trailers.txt
++2fec8fd6d0b6001c42d187d2c19be46b12f762fa677b1bcf410f5e02f9209769 *approved_msg_001.txt
++```
++
++Same hash. Not a word and not a line break differs from the approved text.
++
++### 50/72 measurement, trailers excluded
++
++```
++subject  len= 46  max=50  OK  |Add working-rules section and task 001 reports|
++line 2   blank separator: OK
++body L3   len= 70  max=72  OK  |Insert the rules that govern every task at the top of CLAUDE.md, above|
++body L4   len= 70  max=72  OK  |the architecture reference, as a pure addition: one hunk, nothing that|
++body L5   len= 29  max=72  OK  |was already there is touched.|
++body L6   len=  0  max=72  OK  ||
++body L7   len= 67  max=72  OK  |Start prompt_outputs/ as the task record, holding the implement and|
++body L8   len= 65  max=72  OK  |gate reports for task 001 and the diff artifact they are verified|
++body L9   len= 48  max=72  OK  |against. Reports and artifacts are both tracked.|
++body L10  len=  0  max=72  OK  ||
++body L11  len= 62  max=72  OK  |Deferred to their own tasks: the CLAUDE.md content defects the|
++body L12  len= 66  max=72  OK  |inventory turned up, and .gitattributes line-ending normalisation.|
++
++measured: longest body line = 70
++VERDICT: every body line within limit
++RESULT: ALL CHECKS PASS
++```
++
++Subject 46 of 50; longest body line 70 of 72.
++
++### Parent
++
++```
++=== parent of the new commit ===
++68cbcf31d98129a69a2b58ee626bd5c274a39ca7
++```
++
++The parent is exactly the base commit from check 1. Single parent, so no merge.
++
++### Final state
++
++```
++=== git status -sb ===
++## main...origin/main [ahead 1]
++?? prompt_outputs/001-bootstrap-commit.md
++
++=== ahead/behind (left=behind right=ahead) ===
++0	1
++```
++
++One ahead, zero behind, working tree clean apart from the untracked report from
++the stopped first attempt. This report adds a second untracked file after the
++fact. **Nothing was pushed.**
++
++---
++
++## 5. UNREQUESTED — ACCEPT OR DROP
++
++Not implemented; listed for ruling.
++
++1. **The trailer question is now settled by absence, not by policy.** This
++   commit has no `Co-Authored-By` and no `Claude-Session`, unlike every earlier
++   commit in the repository. If future commits should carry them, the mechanism
++   needs deciding — a `commit.template`, a `prepare-commit-msg` hook, or a
++   standing rule that the approved message includes them — since nothing appends
++   them automatically here.
++2. **Push task** — the commit is ready; R5's original wording said PUSH verifies
++   the trailers, which no longer applies as written.
++3. **Task 000's move**, still pending per R6.
++4. **Task 002** — the five deferred CLAUDE.md defects per R3.
++5. **`.gitattributes`** task per R4.
+diff --git a/prompt_outputs/001-bootstrap-commit-3.md b/prompt_outputs/001-bootstrap-commit-3.md
+new file mode 100644
+index 0000000..196f78a
+--- /dev/null
++++ b/prompt_outputs/001-bootstrap-commit-3.md
+@@ -0,0 +1,367 @@
++# 001 — bootstrap — commit (third step: amend)
++
++**AMENDED.** `9ff3abde0f78b501426d1614db6a8e8065ce68b0` →
++**`cb4666a25a8b67c0c7684de26ee6c933b4a7dd31`**, one ahead of `origin/main`.
++**Nothing pushed.**
++
++The commit now carries exactly one trailer:
++
++```
++Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
++```
++
++The message before it is byte-identical to what was there — same sha256 as the
++text you approved. The tree is bit-for-bit unchanged. No file, index or tree
++was touched.
++
++**No test script was run.** Per ruling R1 there is no automated test suite, and
++this task changed a commit message only — no `kinematics/` path, and no path at
++all, was involved.
++
++This report is untracked and rides with the next task's commit. The diff
++artifact was not regenerated. The four carried reports were not edited.
++
++Scripts used, both outside the repository:
++
++```
++build_amended_msg.py   capture the stored message, build message + trailer
++verify_amend.py        trailer parse, byte/sha256 comparison, 50/72 re-measure
++```
++
++---
++
++## 1. PRE-AMEND CHECKS — ALL PASS
++
++### Check 1 — HEAD, branch, ahead/behind, parent
++
++```
++=== CHECK 1: HEAD, branch, ahead/behind, parent ===
++9ff3abde0f78b501426d1614db6a8e8065ce68b0
++main
++parent: 68cbcf31d98129a69a2b58ee626bd5c274a39ca7
++## main...origin/main [ahead 1]
++?? prompt_outputs/001-bootstrap-commit-2.md
++?? prompt_outputs/001-bootstrap-commit.md
++behind/ahead:
++0	1
++```
++
++Every claim in the prompt is correct: HEAD was
++`9ff3abde0f78b501426d1614db6a8e8065ce68b0`, on `main`, exactly one ahead and
++zero behind, parent `68cbcf31d98129a69a2b58ee626bd5c274a39ca7`.
++
++### Check 2 — the commit is NOT on the remote
++
++```
++=== CHECK 2: is HEAD on the remote? ===
++fetch exit=0
++--- origin/main is now: ---
++68cbcf31d98129a69a2b58ee626bd5c274a39ca7
++--- is HEAD an ancestor of origin/main? ---
++NO - HEAD is NOT on origin/main (safe to amend)
++--- remote branches containing HEAD ---
++  (nothing listed above = on no remote branch)
++```
++
++After `git fetch`, `origin/main` still points at the parent commit, HEAD is not
++an ancestor of it, and no remote branch contains HEAD. **Unpushed, so amending
++is permitted.**
++
++### Check 3 — zero trailers, and the stored message captured
++
++```
++=== CHECK 3: trailers on the current commit ===
++  (nothing above = zero trailers)
++```
++
++Captured from the commit object, not from `git log --format=%B`:
++
++```
++========================================================================
++PRE-AMEND: THE STORED MESSAGE
++========================================================================
++measured: commit object bytes   = 761
++measured: header bytes          = 224
++measured: stored message bytes  = 535
++measured: stored message lines  = 12
++measured: sha256(stored)        = 2fec8fd6d0b6001c42d187d2c19be46b12f762fa677b1bcf410f5e02f9209769
++measured: ends with newline     = True
++measured: trailers already present = 0 []
++VERDICT: the commit currently carries zero trailers
++```
++
++**535 bytes**, sha256 `2fec8fd6d0b6001c42d187d2c19be46b12f762fa677b1bcf410f5e02f9209769`.
++That is the same hash the previous step recorded for the approved text file, so
++the chain from approved text to committed message was already intact before
++this amend.
++
++### Check 4 — nothing staged, tree clean
++
++```
++=== CHECK 4: nothing staged, tree clean apart from untracked reports ===
++--- staged (index vs HEAD) ---
++  (nothing above = nothing staged)
++--- unstaged (worktree vs index) ---
++  (nothing above = no modified tracked file)
++--- porcelain -uall ---
++?? prompt_outputs/001-bootstrap-commit-2.md
++?? prompt_outputs/001-bootstrap-commit.md
++```
++
++Nothing staged, no modified tracked file, and the only untracked files are the
++two earlier reports. This report did not exist at check time; it was written
++after the amend.
++
++---
++
++## 2. THE AMEND
++
++### The model name
++
++The trailer value is **`Claude Opus 5 <noreply@anthropic.com>`**, taken from
++this session's own runtime attribution — the value Claude Code itself supplies
++for the model running this session. It was **not** copied from any earlier
++commit in this repository: those all name `Claude Opus 4.8 (1M context)`, a
++different model, which is exactly the misattribution the gate report's §7.3
++warned about. Nothing was invented.
++
++### Building the message
++
++```
++========================================================================
++BUILDING THE AMENDED MESSAGE
++========================================================================
++measured: trailer line to append = |Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>|
++measured: trailer line length    = 53
++VERDICT: trailer is well-formed key: value <address>
++measured: amended message bytes = 590
++measured: bytes added           = 55
++measured: amended message lines = 14
++measured: last three lines of the amended message:
++    |inventory turned up, and .gitattributes line-ending normalisation.|
++    ||
++    |Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>|
++VERDICT: trailer is preceded by exactly one blank line
++VERDICT: the message before the trailer is byte-identical to the stored one
++```
++
++55 bytes added: the 53-character trailer, the newline that ends it, and the
++newline that makes the blank line. Nothing else.
++
++### The command
++
++`git commit --amend -F <that file>`. No `--no-verify`, no `-a`, no path
++arguments, nothing staged beforehand.
++
++```
++[main cb4666a] Add working-rules section and task 001 reports
++ Date: Wed Sep 23 11:50:12 2026 +0200
++ 4 files changed, 2591 insertions(+)
++ create mode 100644 prompt_outputs/001-bootstrap-gate.md
++ create mode 100644 prompt_outputs/001-bootstrap-implement.md
++ create mode 100644 prompt_outputs/001-bootstrap.diff.txt
++amend exit=0
++```
++
++---
++
++## 3. POST-AMEND CHECKS
++
++### New hash and parent
++
++```
++=== NEW hash ===
++cb4666a25a8b67c0c7684de26ee6c933b4a7dd31
++=== parent ===
++68cbcf31d98129a69a2b58ee626bd5c274a39ca7
++```
++
++The parent is still `68cbcf3`, unchanged.
++
++### The tree is unchanged
++
++```
++=== TREE unchanged? ===
++pre-amend  9ff3abd^{tree} = 2084e624bfceac0cd316af9c84c1e7fb62899a50
++post-amend HEAD^{tree}    = 2084e624bfceac0cd316af9c84c1e7fb62899a50
++```
++
++Equal. The amend changed the message and nothing else about the content.
++
++### The full stored message
++
++```
++Add working-rules section and task 001 reports
++
++Insert the rules that govern every task at the top of CLAUDE.md, above
++the architecture reference, as a pure addition: one hunk, nothing that
++was already there is touched.
++
++Start prompt_outputs/ as the task record, holding the implement and
++gate reports for task 001 and the diff artifact they are verified
++against. Reports and artifacts are both tracked.
++
++Deferred to their own tasks: the CLAUDE.md content defects the
++inventory turned up, and .gitattributes line-ending normalisation.
++
++Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
++```
++
++### The trailer
++
++Verbatim, the one trailer line the commit carries:
++
++```
++Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
++```
++
++As `git interpret-trailers --parse` sees it:
++
++```
++=== git interpret-trailers --parse ===
++Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
++```
++
++```
++measured: trailer lines = 1
++    TRAILER key='Co-Authored-By'  line=|Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>|
++VERDICT: exactly one trailer
++VERDICT: the trailer key is Co-Authored-By
++measured: Claude-Session trailer present = False
++VERDICT: no Claude-Session trailer, as the ruling requires
++```
++
++Exactly one trailer, key `Co-Authored-By`. No `Claude-Session` line.
++
++### Message minus the trailer is byte-identical to the pre-amend message
++
++```
++measured: trailer lines removed = 1
++measured: blank lines removed   = 1
++measured: remainder bytes       = 535
++
++========================================================================
++B. MESSAGE MINUS TRAILER  vs  PRE-AMEND STORED MESSAGE
++========================================================================
++measured: pre-amend bytes  = 535   sha256 = 2fec8fd6d0b6001c42d187d2c19be46b12f762fa677b1bcf410f5e02f9209769
++measured: remainder bytes  = 535   sha256 = 2fec8fd6d0b6001c42d187d2c19be46b12f762fa677b1bcf410f5e02f9209769
++VERDICT: BYTE-IDENTICAL - the amend changed nothing but the trailer
++VERDICT: sha256 matches
++```
++
++Confirmed independently with `cmp` and `sha256sum` on the two files:
++
++```
++=== independent external cmp + sha256 ===
++cmp: EXIT 0 - identical
++2fec8fd6d0b6001c42d187d2c19be46b12f762fa677b1bcf410f5e02f9209769 *post_amend_minus_trailer.txt
++2fec8fd6d0b6001c42d187d2c19be46b12f762fa677b1bcf410f5e02f9209769 *pre_amend_msg.txt
++```
++
++Same 535 bytes, same hash, `cmp` exit 0. Not a word and not a line break
++changed.
++
++### 50/72 re-measurement, trailer excluded
++
++```
++subject  len= 46  max=50  OK  |Add working-rules section and task 001 reports|
++line 2   blank separator: OK
++body L3   len= 70  max=72  OK  |Insert the rules that govern every task at the top of CLAUDE.md, above|
++body L4   len= 70  max=72  OK  |the architecture reference, as a pure addition: one hunk, nothing that|
++body L5   len= 29  max=72  OK  |was already there is touched.|
++body L6   len=  0  max=72  OK  ||
++body L7   len= 67  max=72  OK  |Start prompt_outputs/ as the task record, holding the implement and|
++body L8   len= 65  max=72  OK  |gate reports for task 001 and the diff artifact they are verified|
++body L9   len= 48  max=72  OK  |against. Reports and artifacts are both tracked.|
++body L10  len=  0  max=72  OK  ||
++body L11  len= 62  max=72  OK  |Deferred to their own tasks: the CLAUDE.md content defects the|
++body L12  len= 66  max=72  OK  |inventory turned up, and .gitattributes line-ending normalisation.|
++
++measured: longest body line = 70
++VERDICT: every body line within limit
++RESULT: ALL CHECKS PASS
++```
++
++Subject 46 of 50; longest body line 70 of 72. The 53-character trailer is
++excluded from the 72 limit, as the ruling intends.
++
++### File figures unchanged
++
++```
++=== git show --stat --oneline HEAD ===
++cb4666a Add working-rules section and task 001 reports
++ CLAUDE.md                                 |   24 +
++ prompt_outputs/001-bootstrap-gate.md      |  439 ++++++++++
++ prompt_outputs/001-bootstrap-implement.md |  821 ++++++++++++++++++
++ prompt_outputs/001-bootstrap.diff.txt     | 1307 +++++++++++++++++++++++++++++
++ 4 files changed, 2591 insertions(+)
++```
++
++24, 439, 821, 1307 — unchanged, as the identical tree hash already implied.
++
++### Final state
++
++```
++=== git status -sb ===
++## main...origin/main [ahead 1]
++?? prompt_outputs/001-bootstrap-commit-2.md
++?? prompt_outputs/001-bootstrap-commit.md
++behind/ahead:
++0	1
++```
++
++One ahead, zero behind. **Nothing pushed.**
++
++---
++
++## 4. ONE DIFFERENCE WORTH RECORDING: THE COMMITTER TIMESTAMP
++
++The prompt asked that nothing change but the message. One thing did, and it is
++inherent to amending rather than something I chose:
++
++```
++=== commit object header diff, pre vs post amend ===
++pre : tree 2084e624bfceac0cd316af9c84c1e7fb62899a50
++pre : parent 68cbcf31d98129a69a2b58ee626bd5c274a39ca7
++pre : author iceBerke <berke.santos@cnrs-orleans.fr> 1790157012 +0200
++pre : committer iceBerke <berke.santos@cnrs-orleans.fr> 1790157012 +0200
++post: tree 2084e624bfceac0cd316af9c84c1e7fb62899a50
++post: parent 68cbcf31d98129a69a2b58ee626bd5c274a39ca7
++post: author iceBerke <berke.santos@cnrs-orleans.fr> 1790157012 +0200
++post: committer iceBerke <berke.santos@cnrs-orleans.fr> 1790157842 +0200
++```
++
++```
++author:    iceBerke <berke.santos@cnrs-orleans.fr>  2026-09-23T11:50:12+02:00
++committer: iceBerke <berke.santos@cnrs-orleans.fr>  2026-09-23T12:04:02+02:00
++```
++
++Tree, parent, author name, author email and **author date are all identical**.
++The **committer date** moved from `1790157012` to `1790157842`, 830 seconds
++later — git rewrites it on every amend. This is why `git commit --amend`
++printed a `Date:` line: the author date now differs from the committer date.
++
++Reported rather than adapted around. It is unavoidable for any amend, and no
++flag was used to suppress or forge it.
++
++---
++
++## 5. UNREQUESTED — ACCEPT OR DROP
++
++Not implemented; listed for ruling.
++
++1. **The new standard is not yet enforced anywhere.** The replacement for R5
++   lives only in this prompt and these reports. Nothing in the repository makes
++   future commits carry `Co-Authored-By` — no `commit.template`, no
++   `prepare-commit-msg` hook, no `trailer.*` config. Every future commit will
++   need the trailer appended deliberately, exactly as this one did, or a
++   mechanism installed.
++2. **Record the amended R5 in CLAUDE.md's working rules**, which currently say
++   only "Never commit without an approved message; never push without a separate
++   push approval" and nothing about trailers.
++3. **Push task** — the commit is ready; PUSH should verify the message minus
++   trailers against the approved text and that exactly one `Co-Authored-By`
++   trailer is present, both of which §3 already demonstrates.
++4. **Task 000's move**, still pending per R6.
++5. **Task 002** — the five deferred CLAUDE.md defects per R3.
++6. **`.gitattributes`** task per R4.
+diff --git a/prompt_outputs/001-bootstrap-commit.md b/prompt_outputs/001-bootstrap-commit.md
+new file mode 100644
+index 0000000..18818fd
+--- /dev/null
++++ b/prompt_outputs/001-bootstrap-commit.md
+@@ -0,0 +1,327 @@
++# 001 — bootstrap — commit
++
++**NOT COMMITTED. STOPPED BEFORE COMMITTING, as this prompt's TRAILERS section
++instructs.** Nothing was committed, nothing was pushed, nothing was staged or
++unstaged, and no file in the repository was modified by this step.
++
++The block is the second trailer: `Claude-Session: <this session's own URL>`.
++That value is **genuinely unavailable** to me, and the prompt says to stop and
++report rather than guess, substitute, or use a placeholder. Evidence in §3.
++
++All six pre-commit checks were run first and **all six pass** — the staged set
++is correct and ready. Only the trailer value is missing.
++
++**No test script was run.** Per ruling R1 there is no automated test suite, and
++check 6 confirms by command that no `kinematics/` path is staged.
++
++Deviation from this prompt, declared: it says to write this report *after* the
++commit. There is no commit, so the report is written in its place, because the
++working rule in CLAUDE.md is that every prompt gets a report written before
++replying in chat. This report stays untracked and rides with the next task's
++commit, as instructed.
++
++Carried reports, frozen and not edited: `001-bootstrap-implement.md`,
++`001-bootstrap-gate.md`.
++
++---
++
++## 1. PRE-COMMIT CHECKS — ALL PASS
++
++### Check 1 — base commit
++
++```
++=== CHECK 1: base commit ===
++68cbcf31d98129a69a2b58ee626bd5c274a39ca7
++demo_test_stage7.py: add --keep to materialise the synthetic tree on disk
++
++## main...origin/main
++M  CLAUDE.md
++A  prompt_outputs/001-bootstrap-gate.md
++A  prompt_outputs/001-bootstrap-implement.md
++A  prompt_outputs/001-bootstrap.diff.txt
++
++=== ahead / behind counts ===
++behind<TAB>ahead: 0	0
++```
++
++Branch is `main`, tracking `origin/main`, zero ahead and zero behind. HEAD is
++`68cbcf31d98129a69a2b58ee626bd5c274a39ca7`, the same commit the gate step
++measured.
++
++### Check 2 — staged set
++
++```
++=== CHECK 2: staged set ===
++On branch main
++Your branch is up to date with 'origin/main'.
++
++Changes to be committed:
++  (use "git restore --staged <file>..." to unstage)
++	modified:   CLAUDE.md
++	new file:   prompt_outputs/001-bootstrap-gate.md
++	new file:   prompt_outputs/001-bootstrap-implement.md
++	new file:   prompt_outputs/001-bootstrap.diff.txt
++
++
++=== git diff --cached --numstat ===
++24	0	CLAUDE.md
++439	0	prompt_outputs/001-bootstrap-gate.md
++821	0	prompt_outputs/001-bootstrap-implement.md
++1307	0	prompt_outputs/001-bootstrap.diff.txt
++
++=== staged name-status ===
++M	CLAUDE.md
++A	prompt_outputs/001-bootstrap-gate.md
++A	prompt_outputs/001-bootstrap-implement.md
++A	prompt_outputs/001-bootstrap.diff.txt
++```
++
++Matched against the gate report's §5 **by command**, by `check_staged.py`, a
++script file outside the repository, which also tests this prompt's four claimed
++figures as claims rather than as facts:
++
++```
++========================================================================
++A. LIVE STAGED SET
++========================================================================
++measured: staged paths = 4
++        24 added    0 removed   CLAUDE.md
++       439 added    0 removed   prompt_outputs/001-bootstrap-gate.md
++       821 added    0 removed   prompt_outputs/001-bootstrap-implement.md
++      1307 added    0 removed   prompt_outputs/001-bootstrap.diff.txt
++
++measured: expected paths = 4
++measured: unexpected staged paths = 0 []
++measured: missing staged paths    = 0 []
++VERDICT: staged set is exactly the four named paths
++
++measured: change type per path
++    M   CLAUDE.md
++    A   prompt_outputs/001-bootstrap-gate.md
++    A   prompt_outputs/001-bootstrap-implement.md
++    A   prompt_outputs/001-bootstrap.diff.txt
++VERDICT: CLAUDE.md is a modification, the other three are additions
++
++measured: paths with non-zero removals = []
++VERDICT: every staged path has 0 removed lines
++
++========================================================================
++B. LIVE NUMSTAT  vs  GATE REPORT SECTION 5 (by command, not by eye)
++========================================================================
++measured: rows parsed from gate report SS5 = 4
++        24 added    0 removed   CLAUDE.md
++       389 added    0 removed   prompt_outputs/001-bootstrap-gate.md
++       821 added    0 removed   prompt_outputs/001-bootstrap-implement.md
++      1257 added    0 removed   prompt_outputs/001-bootstrap.diff.txt
++
++  SAME   gate=(24, 0)  live=(24, 0)   CLAUDE.md
++  MOVED  gate=(389, 0)  live=(439, 0)   prompt_outputs/001-bootstrap-gate.md
++  SAME   gate=(821, 0)  live=(821, 0)   prompt_outputs/001-bootstrap-implement.md
++  MOVED  gate=(1257, 0)  live=(1307, 0)   prompt_outputs/001-bootstrap.diff.txt
++
++measured: rows identical to the gate report = 2
++measured: rows that moved                   = 2 ['prompt_outputs/001-bootstrap-gate.md', 'prompt_outputs/001-bootstrap.diff.txt']
++VERDICT: CLAUDE.md and the implement report match the gate report exactly
++VERDICT: the rows that moved are exactly the two SS7.1 predicted
++
++========================================================================
++C. LIVE NUMSTAT  vs  THIS PROMPT'S CLAIMED FINAL FIGURES
++========================================================================
++  OK     claimed=    24  actual=    24   CLAUDE.md
++  OK     claimed=   439  actual=   439   prompt_outputs/001-bootstrap-gate.md
++  OK     claimed=   821  actual=   821   prompt_outputs/001-bootstrap-implement.md
++  OK     claimed=  1307  actual=  1307   prompt_outputs/001-bootstrap.diff.txt
++
++measured: rows differing from the prompt's claim = 0
++VERDICT: all four claimed figures match the staged reality
++
++========================================================================
++D. RULING R1 - NO kinematics/ PATH IS STAGED
++========================================================================
++measured: staged paths under kinematics/ = 0 []
++VERDICT: no kinematics/ path is staged; no test script was run
++
++========================================================================
++RESULT: ALL CHECKS PASS
++========================================================================
++```
++
++All four of this prompt's claimed figures are correct. The two rows the prompt
++flags as having moved since the gate report are exactly the two the gate
++report's own §7.1 predicted would move, and the two it said must match do match.
++
++### Check 3 — nothing else present
++
++```
++=== CHECK 3: anything else? porcelain -uall ===
++M  CLAUDE.md
++A  prompt_outputs/001-bootstrap-gate.md
++A  prompt_outputs/001-bootstrap-implement.md
++A  prompt_outputs/001-bootstrap.diff.txt
++```
++
++Nothing else staged, nothing else modified, and no untracked file at all at
++check time. This report is the only file this prompt creates, and it was written
++after checks 1–6 so it could not perturb them; it is untracked and not
++intent-to-added, so `git diff HEAD` does not see it and the artifact remains
++valid.
++
++### Check 4 — artifact
++
++```
++=== CHECK 4: artifact verified against an OUTSIDE regeneration ===
++regeneration exit=0
++cmp: EXIT 0 - identical
++
++in-repo artifact NOT overwritten; regeneration written only to:
++  .../scratchpad/001-bootstrap.diff.precommit.txt
++```
++
++Same command the gate step used, with `--output=` pointed at the scratchpad. The
++in-repo artifact was not overwritten.
++
++### Check 5 — CLAUDE.md
++
++```
++=== CHECK 5: CLAUDE.md diff vs HEAD ===
++24	0	CLAUDE.md
++hunk count: 1
++@@ -2,6 +2,30 @@
++deleted lines:
++0
++```
++
++Still exactly one hunk, 24 added, 0 deleted. Hunk header: `@@ -2,6 +2,30 @@`.
++
++### Check 6 — tests
++
++Section D above confirms by command that **no `kinematics/` path is staged**.
++Per ruling R1 there is no automated test suite; the two hand-run scripts both
++live in `kinematics/`. **No test script was run in this task.**
++
++---
++
++## 2. THE APPROVED MESSAGE — UNCHANGED, READY
++
++The approved text was not altered in any way. Held verbatim at
++`scratchpad/commit_msg_001.txt`, byte-identical to the text between this
++prompt's `=====` lines:
++
++```
++Add working-rules section and task 001 reports
++
++Insert the rules that govern every task at the top of CLAUDE.md, above
++the architecture reference, as a pure addition: one hunk, nothing that
++was already there is touched.
++
++Start prompt_outputs/ as the task record, holding the implement and
++gate reports for task 001 and the diff artifact they are verified
++against. Reports and artifacts are both tracked.
++
++Deferred to their own tasks: the CLAUDE.md content defects the
++inventory turned up, and .gitattributes line-ending normalisation.
++```
++
++Nothing forced a change to this message. The blocker is the trailer value, which
++is appended after the message, not part of it.
++
++---
++
++## 3. THE BLOCKER — `Claude-Session` URL IS UNAVAILABLE
++
++### Trailer 1 — available
++
++```
++Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
++```
++
++This is Claude Code's own current attribution value for this session, supplied
++by the harness. It is **not** copied from a previous commit: the last three
++commits all say `Claude Opus 4.8 (1M context)`, a different model, which is
++exactly the misattribution the gate report's §7.3 flagged.
++
++### Trailer 2 — unavailable
++
++The prompt requires `Claude-Session: <this session's own URL>`, forbidding both
++copying from a previous commit and inventing one. I searched for it.
++
++```
++=== any claude.ai/code/session URL in this session's transcript? ===
++https://claude.ai/code/session_01QFdYr8j8nGbkwR2qXpyvep
++```
++
++That single hit is **not this session's URL**. Every occurrence of it is echoed
++content, not metadata — classified by context:
++
++```
++=== does it appear as a session field, or only inside echoed git output? ===
++Claude-Session` URL** — every prior commit carries `session_01QFdYr8j8nGbkwR2qXpyvep
++ery prior commit carries\n  `https://claude.ai/code/session_01QFdYr8j8nGbkwR2qXpyvep
++hropic.com>\nClaude-Session: https://claude.ai/code/session_01QFdYr8j8nGbkwR2qXpyvep
++ic.com>\n    Claude-Session: https://claude.ai/code/session_01QFdYr8j8nGbkwR2qXpyvep
++ic.com>\n80\tClaude-Session: https://claude.ai/code/session_01QFdYr8j8nGbkwR2qXpyvep
++ic.com>\n83\tClaude-Session: https://claude.ai/code/session_01QFdYr8j8nGbkwR2qXpyvep
++ic.com>\n86\tClaude-Session: https://claude.ai/code/session_01QFdYr8j8nGbkwR2qXpyvep
++on_01GpdwrjiuXo9PSpB6PzRMgH\nhttps://claude.ai/code/session_01QFdYr8j8nGbkwR2qXpyvep
++```
++
++Each is either `git log` output I printed during the gate step, my own gate
++report §7.3 text, or the earlier cross-transcript grep — never a session field.
++
++This session's only identifier is a UUID, in a different format from the one the
++trailer URLs use:
++
++```
++=== this session's own identifiers ===
++"sessionId":"e15c2933-b63b-4aa0-8763-45abaa20dbcc"
++
++=== is there ANY field holding a session_01-style id for THIS session? ===
++(no output above = no such field)
++```
++
++**Conclusion.** The trailer URLs use a `session_01…` identifier. This session
++exposes only the UUID `e15c2933-b63b-4aa0-8763-45abaa20dbcc`, and nothing local
++maps one to the other. Building `https://claude.ai/code/session_e15c2933-…`
++would be inventing a URL in a format no existing commit uses, and reusing
++`session_01QFdYr8…` would attribute this work to the previous session. The
++prompt forbids both. **Stopped.**
++
++---
++
++## 4. POST-COMMIT CHECKS — NOT RUN
++
++Every post-commit check in this prompt is conditional on a commit existing. No
++commit was made, so none was run: no `git log -1` of a new commit, no message
++measurement against 50/72, no byte-identity comparison of committed text against
++the approved text, no parent check, and no final `git status -sb` showing one
++ahead. These carry over to the next attempt unchanged.
++
++State of the tree at the end of this step is exactly the state at the start,
++plus this untracked report.
++
++---
++
++## 5. WHAT UNBLOCKS THIS
++
++Any one of these lets the commit proceed with no other change:
++
++1. **Give me this session's URL** and I commit with it verbatim.
++2. **Rule that the UUID form is acceptable** — e.g.
++   `Claude-Session: https://claude.ai/code/session_e15c2933-b63b-4aa0-8763-45abaa20dbcc`
++   — noting it would be the first commit in this repo using that format.
++3. **Drop the `Claude-Session` trailer for this commit** and amend R5, committing
++   with `Co-Authored-By` alone.
++4. **Run the commit yourself** with the approved message and both trailers; the
++   staged set is verified correct and ready.
++
++---
++
++## 6. UNREQUESTED — ACCEPT OR DROP
++
++Not implemented; listed for ruling.
++
++1. **Amend R5** to define where the `Claude-Session` value comes from, so this
++   does not block every future commit in this workflow.
++2. **Task 000's move** still pending per R6.
++3. **Task 002** — the five deferred CLAUDE.md defects per R3.
++4. **`.gitattributes`** task per R4.
+diff --git a/prompt_outputs/001-bootstrap-push.md b/prompt_outputs/001-bootstrap-push.md
+new file mode 100644
+index 0000000..afdf691
+--- /dev/null
++++ b/prompt_outputs/001-bootstrap-push.md
+@@ -0,0 +1,297 @@
++# 001 — bootstrap — push
++
++**PUSHED.** `68cbcf3..cb4666a  main -> main`. `origin/main` now points at
++`cb4666a25a8b67c0c7684de26ee6c933b4a7dd31`; zero ahead, zero behind.
++
++Plain `git push`. No `--force`, no `--force-with-lease`, no refspec. The push
++was accepted first time, so nothing was retried.
++
++**No test script was run, and none was required.** Per ruling R1 there is no
++automated test suite. Check 8 confirms by command that this commit touches no
++`kinematics/` path — its four files are `CLAUDE.md` and three
++`prompt_outputs/` files. Reasoning in §1, check 8.
++
++This report is untracked and rides with the next task's commit. The diff
++artifact was not regenerated. The five carried reports were not edited. No
++file, tree, index or message changed in this task.
++
++Script used, outside the repository:
++
++```
++verify_push.py   subject byte comparison, trailer parse, sha256/cmp, 50/72
++```
++
++---
++
++## 1. PRE-PUSH CHECKS — ALL EIGHT PASS
++
++`git fetch` was run first (`fetch exit=0`).
++
++### Check 1 — position
++
++```
++=== CHECK 1: position (left=behind right=ahead) ===
++0	1
++```
++
++Zero behind, exactly one ahead.
++
++### Check 2 — identity
++
++```
++=== CHECK 2: identity ===
++HEAD:            cb4666a25a8b67c0c7684de26ee6c933b4a7dd31
++HEAD parent:     68cbcf31d98129a69a2b58ee626bd5c274a39ca7
++origin/main:     68cbcf31d98129a69a2b58ee626bd5c274a39ca7
++--- is origin/main == HEAD's parent? ---
++YES
++```
++
++Both claims correct: HEAD is `cb4666a25a8b67c0c7684de26ee6c933b4a7dd31`, its
++parent is `68cbcf31d98129a69a2b58ee626bd5c274a39ca7`, and that is exactly where
++`origin/main` pointed — so the push is a fast-forward of one commit.
++
++### Check 3 — subject, byte by byte
++
++```
++========================================================================
++CHECK 3. SUBJECT, BYTE BY BYTE
++========================================================================
++measured: subject bytes   = 46
++measured: approved bytes  = 46
++measured: subject         = |Add working-rules section and task 001 reports|
++measured: non-ASCII bytes in subject = 0 []
++VERDICT: subject is pure ASCII
++VERDICT: subject is BYTE-IDENTICAL to the approved text
++```
++
++**46 bytes, every byte ASCII.** Compared as bytes against the approved text by a
++script file outside the repository, not as text and not by eye — which is what
++would catch a non-ASCII lookalike character. There is none.
++
++### Check 4 — message minus trailers
++
++Taken from `git cat-file commit HEAD`, everything after the first blank line.
++`git log --format=%B` was not used.
++
++```
++========================================================================
++CHECK 4. MESSAGE MINUS TRAILERS vs THE APPROVED TEXT
++========================================================================
++measured: trailer lines removed = 1
++measured: blank lines removed   = 1
++measured: remainder bytes  = 535   (claimed 535)
++measured: remainder sha256 = 2fec8fd6d0b6001c42d187d2c19be46b12f762fa677b1bcf410f5e02f9209769
++measured: claimed  sha256  = 2fec8fd6d0b6001c42d187d2c19be46b12f762fa677b1bcf410f5e02f9209769
++VERDICT: byte count matches the claimed 535
++VERDICT: sha256 matches the approved text
++```
++
++Confirmed independently by `cmp` and `sha256sum` against the two files this task
++chain produced earlier — the message captured before the amend, and the approved
++message file used for the original commit:
++
++```
++=== CHECK 4, independent external cmp + sha256 ===
++cmp: EXIT 0 - identical
++2fec8fd6...9769 *prepush_minus_trailers.txt
++2fec8fd6...9769 *pre_amend_msg.txt
++2fec8fd6...9769 *approved_msg_001.txt
++```
++
++All three carry the same hash. Both claims in the prompt — 535 bytes and sha256
++`2fec8fd6d0b6001c42d187d2c19be46b12f762fa677b1bcf410f5e02f9209769` — are
++correct.
++
++### Check 5 — trailers
++
++```
++========================================================================
++CHECK 5. TRAILERS
++========================================================================
++measured: trailer lines = 1
++    TRAILER: |Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>|
++VERDICT: exactly one trailer
++measured: trailer key = 'Co-Authored-By'
++VERDICT: trailer key is Co-Authored-By
++measured: ends with <noreply@anthropic.com> = True
++VERDICT: address is <noreply@anthropic.com>
++measured: Claude-Session trailer present = False
++VERDICT: no Claude-Session trailer
++```
++
++The trailer line, verbatim:
++
++```
++Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
++```
++
++Exactly one trailer, key `Co-Authored-By`, address `<noreply@anthropic.com>`,
++and no `Claude-Session` line. **The model the trailer names was deliberately not
++checked** — per this prompt it is whatever Claude Code supplied at commit time
++and is not yours to approve. The script says so where it runs:
++
++```
++note: the model named in the trailer is whatever Claude Code supplied
++      at commit time and is deliberately NOT checked here.
++```
++
++### Check 6 — limits, trailers excluded
++
++```
++subject  len= 46  max=50  OK  |Add working-rules section and task 001 reports|
++line 2   blank separator: OK
++body L3   len= 70  max=72  OK  |Insert the rules that govern every task at the top of CLAUDE.md, above|
++body L4   len= 70  max=72  OK  |the architecture reference, as a pure addition: one hunk, nothing that|
++body L5   len= 29  max=72  OK  |was already there is touched.|
++body L6   len=  0  max=72  OK  ||
++body L7   len= 67  max=72  OK  |Start prompt_outputs/ as the task record, holding the implement and|
++body L8   len= 65  max=72  OK  |gate reports for task 001 and the diff artifact they are verified|
++body L9   len= 48  max=72  OK  |against. Reports and artifacts are both tracked.|
++body L10  len=  0  max=72  OK  ||
++body L11  len= 62  max=72  OK  |Deferred to their own tasks: the CLAUDE.md content defects the|
++body L12  len= 66  max=72  OK  |inventory turned up, and .gitattributes line-ending normalisation.|
++
++measured: longest body line = 70
++VERDICT: every body line within limit
++```
++
++Subject 46 of 50; longest body line 70 of 72. The 53-character trailer is
++excluded, as the ruling intends.
++
++### Check 7 — tree state
++
++```
++=== CHECK 7: tree state ===
++--- staged ---
++  (nothing above = nothing staged)
++--- modified tracked ---
++  (nothing above = none)
++--- porcelain -uall ---
++?? prompt_outputs/001-bootstrap-commit-2.md
++?? prompt_outputs/001-bootstrap-commit-3.md
++?? prompt_outputs/001-bootstrap-commit.md
++```
++
++Nothing staged, no modified tracked file, and the only untracked files are the
++three earlier reports. This report did not exist at check time.
++
++### Check 8 — tests
++
++```
++=== CHECK 8: files this commit touches ===
++CLAUDE.md
++prompt_outputs/001-bootstrap-gate.md
++prompt_outputs/001-bootstrap-implement.md
++prompt_outputs/001-bootstrap.diff.txt
++--- any kinematics/ path? ---
++0 - none
++```
++
++Per ruling R1 there is no automated test suite, and the two hand-run scripts
++both live in `kinematics/`. This commit touches **no `kinematics/` path** — no
++`.py` file of any kind, in fact.
++
++**No manual run is required, and here is why.** The working rule says anything
++tests cannot reach needs a manual run by the user before push. That rule exists
++to catch *behaviour* no test covers. This commit changes no behaviour: it adds a
++documentation section to `CLAUDE.md` and three report files under
++`prompt_outputs/`. Nothing in it is executed by the pipeline, imported by any
++module, or read at runtime. There is no behaviour for a manual run to exercise,
++so the rule is satisfied vacuously rather than skipped. The one thing that
++*could* have gone wrong — the `CLAUDE.md` edit damaging existing content — was
++verified byte-for-byte at the implement and gate steps and is a pure 24-line
++addition with zero deletions.
++
++---
++
++## 2. THE PUSH
++
++```
++=== git push ===
++To https://github.com/iceBerke/ME-Kinematic-Analysis.git
++   68cbcf3..cb4666a  main -> main
++push exit=0
++```
++
++A fast-forward, `68cbcf3..cb4666a`, exit 0. Plain `git push` with no flags and
++no refspec. Nothing was rejected, so nothing was retried.
++
++---
++
++## 3. POST-PUSH CHECKS
++
++### origin/main now points at the pushed commit
++
++```
++=== origin/main now points at ===
++cb4666a25a8b67c0c7684de26ee6c933b4a7dd31
++local HEAD: cb4666a25a8b67c0c7684de26ee6c933b4a7dd31
++```
++
++After `git fetch`, `origin/main` is `cb4666a25a8b67c0c7684de26ee6c933b4a7dd31`,
++equal to local HEAD.
++
++### Zero ahead, zero behind
++
++```
++=== position (left=behind right=ahead) ===
++0	0
++```
++
++### The remote commit object is byte-identical to the local one
++
++```
++=== remote commit object vs local, by sha256 ===
++abc99521ad4c9a89d67c1732129452bfc57d2fb99fa61abb778718194131ea5c *remote_commit_object.txt
++abc99521ad4c9a89d67c1732129452bfc57d2fb99fa61abb778718194131ea5c *local_commit_object.txt
++cmp: EXIT 0 - identical
++```
++
++The local object's sha256 was recorded **before** the push and the remote's read
++back **after** it, so this compares what was sent against what landed rather
++than a value derived twice from the same side. Same hash, `cmp` exit 0 — message,
++trailer, tree, parent, author and committer all arrived unchanged.
++
++The trailer read back from the remote ref:
++
++```
++=== trailers on the remote ref ===
++Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
++```
++
++### Final state
++
++```
++=== git status -sb ===
++## main...origin/main
++?? prompt_outputs/001-bootstrap-commit-2.md
++?? prompt_outputs/001-bootstrap-commit-3.md
++?? prompt_outputs/001-bootstrap-commit.md
++```
++
++No ahead/behind markers — local and remote agree. The working tree is clean
++apart from the three untracked reports, to which this one is now added.
++
++**Task 001 is complete and on the remote.**
++
++---
++
++## 4. UNREQUESTED — ACCEPT OR DROP
++
++Not implemented; listed for ruling.
++
++1. **Four untracked reports now await the next commit** —
++   `001-bootstrap-commit.md`, `-commit-2.md`, `-commit-3.md` and this
++   `001-bootstrap-push.md`. By ruling R2 `prompt_outputs/` is tracked, so all
++   four should ride with task 002's commit as instructed.
++2. **Nothing enforces the `Co-Authored-By` standard.** No `commit.template`, no
++   `prepare-commit-msg` hook, no `trailer.*` config. Every future commit needs
++   the trailer appended deliberately, exactly as this one did, or a mechanism
++   installed.
++3. **Record the amended R5 in CLAUDE.md's working rules**, which currently say
++   only "Never commit without an approved message; never push without a separate
++   push approval" and nothing about trailers.
++4. **Task 000's move**, still pending per R6.
++5. **Task 002** — the five deferred CLAUDE.md defects per R3.
++6. **`.gitattributes`** task per R4.
+diff --git a/prompt_outputs/002-docs-gate.md b/prompt_outputs/002-docs-gate.md
+new file mode 100644
+index 0000000..0874cc2
+--- /dev/null
++++ b/prompt_outputs/002-docs-gate.md
+@@ -0,0 +1,459 @@
++# 002 — docs — gate
++
++Task: drop the proposed marker, rewrap the pointer bullet, record the rulings
++and errata, stage by explicit path, propose the commit message.
++
++**Stopped before committing: nothing committed, nothing pushed.** The only
++index operations are the `git add -N` this prompt requires and the ten explicit
++`git add` paths it names.
++
++**No test script was run.** There is no automated test suite, and this task
++touches no `kinematics/` path — §3 confirms the only file changed is
++`CLAUDE.md`. No pipeline script ran and no dataset was touched.
++
++Carried reports, frozen and not edited: `002-docs-implement.md`, and task 001's
++`001-bootstrap-commit.md`, `-commit-2.md`, `-commit-3.md`, `001-bootstrap-push.md`.
++
++Scripts used, both outside the repository:
++
++```
++gate_edits.py        applies C1 and C2 at byte level, CRLF preserved
++verify_gate_002.py   changed file set, line endings, character scan, sweeps
++measure_msg.py       commit-message length measurement
++```
++
++---
++
++## 1. RULINGS RECORDED
++
++### R7 — D3 accepted as implemented
++
++Replacing the two literal U+03BC characters with their codepoint names was
++correct. Normalising them to U+00B5, as the implement prompt asked, would have
++left the paragraph describing a crash that would not occur: the crash is caused
++by cp1252 being unable to encode U+03BC, and cp1252 encodes U+00B5 without
++error. The implement report's §3 holds the two measurements that establish
++this.
++
++### R8 — the rest of the CLAUDE.md edits accepted as written
++
++D1, D2, D5, D6 and the pointer bullet stand as implemented. Only the marker
++removal (C1) and the rewrap (C2) remained, and both are done in §2.
++
++### R9 — U+26A0 U+FE0F is left alone deliberately
++
++The warning sign followed by VARIATION SELECTOR-16 at what is now L78 is valid
++UTF-8, renders correctly, and changing it would be churn. **Recorded so a later
++task does not reopen it.** It was raised as an incidental observation in the
++implement report's §6 and is now closed.
++
++---
++
++## 2. THE TWO CHANGES
++
++### C1 — remove the proposed marker, L118 (unchanged number: this edit removes no line)
++
++Claimed at post-edit L118, and it was there:
++
++```
++measured: L118 contains ' *(Proposed, task 002:' = True
++measured: L118 ends with ')*' = True
++VERDICT: C1 marker is at L118 as claimed
++```
++
++**BEFORE, L118:**
++
++```
++- **Encoding fixes.** The old scripts write a mu character to the summary with the platform default encoding, which **crashes on Windows** (cp1252): they use U+03BC GREEK SMALL LETTER MU, which cp1252 cannot encode, rather than U+00B5 MICRO SIGN, which it can. Their `SPEED FILTER` progress line carries the same character, so on a Windows console that `print` raised `UnicodeEncodeError` inside the `try`, and the bare `except` logged every speed-filtered track as a failed track. The new code opens report/CSV files with `encoding='utf-8'` and keeps console output ASCII. *(Proposed, task 002: the two literal mu characters here were replaced by codepoint names rather than normalised to U+00B5, which would have made this paragraph false.)*
++```
++
++**AFTER, now L119** (the C2 rewrap above it pushed it down by one):
++
++```
++- **Encoding fixes.** The old scripts write a mu character to the summary with the platform default encoding, which **crashes on Windows** (cp1252): they use U+03BC GREEK SMALL LETTER MU, which cp1252 cannot encode, rather than U+00B5 MICRO SIGN, which it can. Their `SPEED FILTER` progress line carries the same character, so on a Windows console that `print` raised `UnicodeEncodeError` inside the `try`, and the bare `except` logged every speed-filtered track as a failed track. The new code opens report/CSV files with `encoding='utf-8'` and keeps console output ASCII.
++```
++
++```
++measured: characters removed = 170
++measured: removed text = | *(Proposed, task 002: the two literal mu characters here were replaced by codepoint names rather than normalised to U+00B5, which would have made this paragraph false.)*|
++measured: line length 743 -> 573
++VERDICT: the sentence now ends at 'keeps console output ASCII.'
++VERDICT: both codepoint names survive untouched
++```
++
++Exactly the parenthetical and the single space before it were removed, 170
++characters. The sentence naming U+03BC and U+00B5 is untouched.
++
++### C2 — rewrap the pointer bullet, L28
++
++Claimed at post-edit L28, and it was there:
++
++```
++measured: L28 == expected pointer bullet = True
++measured: L28 length = 87
++VERDICT: C2 pointer bullet is at L28 as claimed
++```
++
++**BEFORE, L28 — one line, 87 columns:**
++
++```
++- Project decisions are recorded in DECISIONS.md, and recurring mistakes in GOTCHAS.md.
++```
++
++**AFTER, L28–L29:**
++
++```
++- Project decisions are recorded in DECISIONS.md, and recurring mistakes
++  in GOTCHAS.md.
++```
++
++```
++measured: words = 12
++measured: resulting lines = 2
++    line 1: len= 72  |- Project decisions are recorded in DECISIONS.md, and recurring mistakes|
++    line 2: len= 16  |  in GOTCHAS.md.|
++VERDICT: every wrapped line is within 72 columns
++measured: rejoined == original = True
++VERDICT: wording is preserved exactly; only breaks and indent changed
++VERDICT: continuation lines use the two-space indent
++```
++
++**Line lengths: 72 and 16.** The wording is preserved exactly — the script
++rejoins the wrapped lines and confirms they reproduce the original string byte
++for byte, so only the break and the indent changed.
++
++**A measured difference from the prompt's description.** The prompt says every
++other bullet in the block "wraps at roughly 72 characters". One does not — it
++is 73:
++
++```
++measured: existing lines wider than 72 = 1
++    len=73  |- Anything tests cannot reach needs a manual run by the user before push.|
++VERDICT: the block wraps at roughly 72 columns (widest existing line is 73)
++```
++
++This first ran as a hard assertion that nothing exceeded 72, and the script
++refused to write anything until I relaxed it to match the measured reality.
++"Roughly 72" is accurate; strictly-72 is not. I wrapped at 72, which is the
++width the other ten wrapped bullets use, and which the greedy fill the block
++already follows produces for this text.
++
++---
++
++## 3. VERIFICATION
++
++### CLAUDE.md is the only file this step changed
++
++```
++     M CLAUDE.md
++     A DECISIONS.md
++     A GOTCHAS.md
++     A prompt_outputs/001-bootstrap-commit-2.md
++     A prompt_outputs/001-bootstrap-commit-3.md
++     A prompt_outputs/001-bootstrap-commit.md
++     A prompt_outputs/001-bootstrap-push.md
++     A prompt_outputs/002-docs-implement.md
++    ?? prompt_outputs/002-docs.diff.txt
++
++measured: modified tracked files = ['CLAUDE.md']
++VERDICT: CLAUDE.md is the only modified tracked file
++measured: README.md appears in git status = False
++VERDICT: README.md untouched
++measured: .py / .gitignore / .gitattributes in git status = []
++VERDICT: no .py file, no .gitignore, no .gitattributes touched
++```
++
++`git status` alone cannot show that `DECISIONS.md` and `GOTCHAS.md` are
++untouched *by this step*, since both are new files and appear whole either way.
++So they were reconstructed from the implement step's own diff artifact and
++compared:
++
++```
++--- the two new files vs what the implement step produced ---
++measured: DECISIONS.md  implement-step bytes=2722 sha=e712f4a118d9260b
++measured: DECISIONS.md  current        bytes=2722 sha=e712f4a118d9260b
++VERDICT: DECISIONS.md is unchanged by this step
++measured: GOTCHAS.md  implement-step bytes=1723 sha=019c98473b9de35f
++measured: GOTCHAS.md  current        bytes=1723 sha=019c98473b9de35f
++VERDICT: GOTCHAS.md is unchanged by this step
++```
++
++### Line endings still uniformly CRLF
++
++```
++measured: BEFORE  bytes= 28483  CRLF=142  bare-LF=0
++measured: AFTER   bytes= 28316  CRLF=143  bare-LF=0
++VERDICT: bare-LF is 0 before and after - uniformly CRLF
++VERDICT: CRLF 142 -> 143, +1 for the C2 rewrap only
++```
++
++Bytes fell by 167 — the 170 removed marker characters, less the 3 bytes the
++rewrap adds (one CRLF plus the two-space indent, minus the space it replaced).
++
++### The two touched lines, character by character
++
++```
++--- C2 pointer bullet ---
++L28 len=72: - Project decisions are recorded in DECISIONS.md, and recurring mistakes
++    measured: non-ASCII characters on L28 = 0 (pure ASCII)
++L29 len=16:   in GOTCHAS.md.
++    measured: non-ASCII characters on L29 = 0 (pure ASCII)
++
++--- C1 encoding bullet ---
++L119 len=573: - **Encoding fixes.** The old scripts write a mu character ... keeps console output ASCII.
++    measured: non-ASCII characters on L119 = 0 (pure ASCII)
++VERDICT: C1 line now ends at 'keeps console output ASCII.'
++VERDICT: both codepoint names survive on the C1 line
++```
++
++**All three lines are pure ASCII — there is no non-ASCII character on any line
++this step touched.** That is the whole point of C1's original rewording: the
++paragraph now describes the two codepoints by name instead of printing either.
++
++### Sweeps
++
++```
++measured: lines containing U+03BC in CLAUDE.md = 0 []
++VERDICT: no U+03BC anywhere in CLAUDE.md
++measured: lines containing U+00B5 in CLAUDE.md = 1 [109]
++measured: 'CLAUDE.md'      occurrences of 'Proposed, task 002' = 0
++VERDICT: 'Proposed, task 002' appears nowhere in CLAUDE.md
++measured: 'DECISIONS.md'   occurrences of 'Proposed, task 002' = 0
++VERDICT: 'Proposed, task 002' appears nowhere in DECISIONS.md
++measured: 'GOTCHAS.md'     occurrences of 'Proposed, task 002' = 0
++VERDICT: 'Proposed, task 002' appears nowhere in GOTCHAS.md
++```
++
++No U+03BC anywhere. The single U+00B5 is the `µm/s` unit, now at L109.
++
++---
++
++## 4. ERRATA AGAINST THE FROZEN IMPLEMENT REPORT
++
++`002-docs-implement.md` is frozen and was **not edited**.
++
++### E1 — CONFIRMED
++
++Its §9 numstat block shows `002-docs-implement.md` at **444** added lines. The
++correct figure is **475**. Verified both ways:
++
++```
++=== E1: what the frozen implement report SS9 says ===
++  431:444	0	prompt_outputs/002-docs-implement.md
++
++=== E1: the frozen report's actual line count ===
++  lines: 475
++
++=== E1: live numstat for that path ===
++475	0	prompt_outputs/002-docs-implement.md
++```
++
++The report's own line count and git's numstat agree on 475, so **475 is
++correct and 444 is stale**. The other rows are unaffected, exactly as this
++prompt says.
++
++This is not an error so much as the fixed point that cannot be reached: the
++report was 444 lines when the figure was measured, and quoting the figure into
++it made it 475. The frozen report predicted this in the same section:
++
++```
++436:**The usual self-reference caveat.** This report is inside the artifact while
++437-quoting the artifact's own numstat, so the two cannot both be final at the same
++438-instant. The block above was measured when the artifact was first generated;
++```
++
++Its caveat named the right two rows and the right reason; only the number it
++had already printed could not be updated.
++
++### Nothing else believed wrong
++
++Re-reading the frozen report against the current files, no other figure or
++claim in it is wrong. Its line numbers (L108 for U+00B5, L118 for the encoding
++bullet) were correct when written and have since shifted by +1 because of C2;
++that is this step's doing, not an error in that report.
++
++---
++
++## 5. STAGING
++
++Staged by explicit path only — no globs, no `.`, no `-A` — exactly the ten
++paths this prompt names.
++
++```
++=== git status ===
++On branch main
++Your branch is up to date with 'origin/main'.
++
++Changes to be committed:
++  (use "git restore --staged <file>..." to unstage)
++	modified:   CLAUDE.md
++	new file:   DECISIONS.md
++	new file:   GOTCHAS.md
++	new file:   prompt_outputs/001-bootstrap-commit-2.md
++	new file:   prompt_outputs/001-bootstrap-commit-3.md
++	new file:   prompt_outputs/001-bootstrap-commit.md
++	new file:   prompt_outputs/001-bootstrap-push.md
++	new file:   prompt_outputs/002-docs-gate.md
++	new file:   prompt_outputs/002-docs-implement.md
++	new file:   prompt_outputs/002-docs.diff.txt
++
++
++=== git diff --cached --numstat ===
++7	5	CLAUDE.md
++66	0	DECISIONS.md
++39	0	GOTCHAS.md
++367	0	prompt_outputs/001-bootstrap-commit-2.md
++367	0	prompt_outputs/001-bootstrap-commit-3.md
++327	0	prompt_outputs/001-bootstrap-commit.md
++297	0	prompt_outputs/001-bootstrap-push.md
++393	0	prompt_outputs/002-docs-gate.md
++475	0	prompt_outputs/002-docs-implement.md
++2429	0	prompt_outputs/002-docs.diff.txt
++```
++
++`git status` shows **no other modified or untracked file**, so nothing outside
++the ten named paths was staged and nothing else needed reporting. `CLAUDE.md`
++is the only modification, at 7 added and 5 removed: the five replaced lines
++from the implement step, plus C1's shortened line and C2's two lines in place
++of one.
++
++Per §6 the two self-referential rows were re-staged after this measurement;
++their converged figures are in the chat reply.
++
++---
++
++## 6. DIFF ARTIFACT
++
++Regenerated with the prescribed command and verified by `cmp` against a
++regeneration written outside the repository.
++
++```
++=== cmp artifact vs external regeneration ===
++cmp: EXIT 0 - identical
++
++=== artifact numstat ===
++7	5	CLAUDE.md
++66	0	DECISIONS.md
++39	0	GOTCHAS.md
++367	0	prompt_outputs/001-bootstrap-commit-2.md
++367	0	prompt_outputs/001-bootstrap-commit-3.md
++327	0	prompt_outputs/001-bootstrap-commit.md
++297	0	prompt_outputs/001-bootstrap-push.md
++393	0	prompt_outputs/002-docs-gate.md
++475	0	prompt_outputs/002-docs-implement.md
++```
++
++The artifact and the regeneration written outside the repository are identical.
++
++**Same self-reference caveat as before, and it is what E1 records.** This
++report sits inside the artifact while quoting the artifact's own numstat, so
++neither can be final at the instant the other is measured. The blocks above
++were taken when the ten paths were first staged; the artifact was then
++regenerated so it reflects this finished report, `cmp` against a fresh outside
++regeneration was rerun and again returned exit 0, and
++`prompt_outputs/002-docs-gate.md` and `prompt_outputs/002-docs.diff.txt` were
++re-staged by explicit path so index and disk agree. Only those two rows move
++between the two measurements; the other eight are final above. The converged
++figures are in the chat reply.
++
++---
++
++## 7. PROPOSED COMMIT MESSAGE
++
++Per `DECISIONS.md` the message carries **no trailer**; the COMMIT step appends
++exactly one `Co-Authored-By`.
++
++```
++Fix CLAUDE.md defects; add DECISIONS and GOTCHAS
++
++Correct five defects the task 001 inventory found in CLAUDE.md: the
++claim that no test suite exists, the highest-version rule that two
++sections contradict, the two different micro/mu codepoints, a count
++of three where four scripts are listed, and archived scripts that
++are never named in full.
++
++Record the rulings behind this cleanup in DECISIONS.md and the
++mistakes that have already cost a round of work in GOTCHAS.md, and
++add a working-rules bullet pointing at both.
++```
++
++Measured by `measure_msg.py`, a script file outside the repository:
++
++```
++subject  len= 48  max=50  OK  |Fix CLAUDE.md defects; add DECISIONS and GOTCHAS|
++line 2   blank separator: OK
++body L3   len= 67  max=72  OK  |Correct five defects the task 001 inventory found in CLAUDE.md: the|
++body L4   len= 66  max=72  OK  |claim that no test suite exists, the highest-version rule that two|
++body L5   len= 67  max=72  OK  |sections contradict, the two different micro/mu codepoints, a count|
++body L6   len= 65  max=72  OK  |of three where four scripts are listed, and archived scripts that|
++body L7   len= 24  max=72  OK  |are never named in full.|
++body L8   len=  0  max=72  OK  ||
++body L9   len= 62  max=72  OK  |Record the rulings behind this cleanup in DECISIONS.md and the|
++body L10  len= 66  max=72  OK  |mistakes that have already cost a round of work in GOTCHAS.md, and|
++body L11  len= 44  max=72  OK  |add a working-rules bullet pointing at both.|
++
++longest body line: 67
++RESULT: PASS
++EXIT=0
++```
++
++Confirmed trailer-free:
++
++```
++=== no trailer present in the proposed message? ===
++0 - no trailer, as DECISIONS.md requires
++```
++
++The body covers all three required subjects: the five defect fixes, the two new
++files, and the pointer bullet.
++
++---
++
++## 8. POINTS FOR RULING
++
++### 8.1 The rewrap changes the block-vs-source comparison — by one more line
++
++**Yes, and the number moves from one to two.** Measured against the verbatim
++source block:
++
++```
++=== source block (task 001 prompt, verbatim) ===
++  source lines: 23
++
++=== the block as it now stands in CLAUDE.md (L5..L29) ===
++  current lines: 25
++
++=== diff: source block vs current block ===
++23a24,25
++> - Project decisions are recorded in DECISIONS.md, and recurring mistakes
++>   in GOTCHAS.md.
++```
++
++The implement report said the block differs from its source "by exactly one
++line, which the prompt states is intended". After C2 it differs by **two
++lines**, because the pointer bullet now occupies two. Nothing else changed: the
++diff is a pure append at the end, so all 23 original lines remain byte-identical
++and in order.
++
++So the honest statement is: **one added bullet, two added lines.** If a future
++task verifies the block against its source by line count, it should expect 25,
++not 24.
++
++### 8.2 Anything else wrong in the frozen implement report
++
++Nothing beyond E1 — see §4.
++
++---
++
++## 9. UNREQUESTED — ACCEPT OR DROP
++
++Not implemented; listed for ruling.
++
++1. **The 73-column bullet** at L27, `- Anything tests cannot reach needs a
++   manual run by the user before push.`, is one character over the width every
++   other line respects. Rewrapping it would be a one-line whitespace change;
++   leaving it keeps the block byte-identical to its approved source.
++2. **`.gitattributes`** remains its own task per the line-endings decision.
++3. **Task 000's move**, still pending.
++4. **Nothing enforces the `Co-Authored-By` trailer** — no `commit.template`, no
++   hook, no `trailer.*` config. Recorded in `DECISIONS.md`, still unenforced.
+diff --git a/prompt_outputs/002-docs-implement.md b/prompt_outputs/002-docs-implement.md
+new file mode 100644
+index 0000000..8f48a2d
+--- /dev/null
++++ b/prompt_outputs/002-docs-implement.md
+@@ -0,0 +1,475 @@
++# 002 — docs — implement
++
++Task: fix five CLAUDE.md content defects, create `DECISIONS.md` and
++`GOTCHAS.md`, add a pointer bullet to the working rules.
++
++**Stopped at the review gate: nothing staged, nothing committed, nothing
++pushed.** The only index operation is `git add -N` (intent-to-add), which this
++prompt requires so the diff artifact can see new files; it records no content.
++
++**No test script was run.** There is no automated test suite, and this task
++touches no `kinematics/` path — §6 confirms the changed set is `CLAUDE.md`,
++`DECISIONS.md` and `GOTCHAS.md`. No pipeline script ran and no dataset was
++touched. No `.py`, `.gitignore` or `.gitattributes` file was created or
++modified; line endings were not changed anywhere.
++
++Scripts used, both outside the repository:
++
++```
++edit_claude_md.py   applies the six edits at byte level, CRLF preserved
++verify_002.py       edits, changed file set, line endings, character scan
++```
++
++---
++
++## 1. EVERY CLAIMED LINE NUMBER WAS CORRECT
++
++The prompt gave post-edit line numbers from `001-bootstrap-implement.md` §5.
++All six were verified in the live file **before** anything was written; the
++edit script refuses to run otherwise.
++
++```
++========================================================================
++VERIFYING EVERY CLAIMED LINE BEFORE TOUCHING ANYTHING
++========================================================================
++measured: D1 at L33 contains expected text = True
++VERDICT: D1 is where the prompt claims (L33)
++measured: D2 at L48 contains expected text = True
++VERDICT: D2 is where the prompt claims (L48)
++measured: D6 at L50 contains expected text = True
++VERDICT: D6 is where the prompt claims (L50)
++measured: D3 at L117 contains expected text = True
++VERDICT: D3 is where the prompt claims (L117)
++measured: D5 at L129 contains expected text = True
++VERDICT: D5 is where the prompt claims (L129)
++measured: POINTER anchor L27 matches exactly = True
++VERDICT: POINTER anchor is the last working-rules bullet
++measured: L28 is blank = True
++VERDICT: the working-rules section ends at the anchor
++```
++
++No difference to report on placement. **Each of the five is a genuine defect**,
++and D3 is a genuine defect with a complication — see §3.
++
++---
++
++## 2. THE SIX EDITS, BEFORE AND AFTER
++
++Line numbers after the POINTER insertion shift by +1 from L28 onward.
++
++### POINTER — new bullet, post-edit L28
++
++```
++BEFORE: (line did not exist)
++AFTER  L28: - Project decisions are recorded in DECISIONS.md, and recurring mistakes in GOTCHAS.md.
++```
++
++Added as the last bullet of `## Working rules (how every task is run)`. This
++makes the block differ from its source in the task-001 prompt by exactly one
++line, which the prompt states is intended.
++
++### D1 — L33 → L34
++
++```
++BEFORE L33: There is no package, no build, no test suite, and no CLI. Each `.py` file is a self-contained batch script run directly with `python <script>.py`. **All configuration lives in hard-coded constants inside the `if __name__ == "__main__":` block (or module-level constants near the top) — there are no command-line arguments.** To run anything you edit the `root_directory` (and related paths/parameters) at the bottom of the file, then execute it.
++
++AFTER  L34: There is no package, no build, no **automated** test suite, and no CLI — the only tests are two hand-run scripts in `kinematics/`: `test_stage7_structure.py`, which needs a real dataset root, and `demo_test_stage7.py`, which is synthetic and needs no data. Each `.py` file is a self-contained batch script run directly with `python <script>.py`. **All configuration lives in hard-coded constants inside the `if __name__ == "__main__":` block (or module-level constants near the top) — there are no command-line arguments.** To run anything you edit the `root_directory` (and related paths/parameters) at the bottom of the file, then execute it.
++```
++
++"no package, no build, no CLI" is intact; only "test suite" gained
++"**automated**", and the two scripts are now named where the claim is made
++rather than only at L111.
++
++### D2 — L48 → L49
++
++```
++BEFORE L48: Many scripts exist as `_v1`/`_v2`/`_v3`/`_v4`/`_v5` (and `_part1`/`_complete`) variants. **The highest version number is the current one**; lower versions are kept for history. When editing behavior, edit the latest version unless explicitly told otherwise.
++
++AFTER  L49: Many scripts exist as `_v1`/`_v2`/`_v3`/`_v4`/`_v5` (and `_part1`/`_complete`) variants. **The highest version number is the current one unless this file says otherwise**; lower versions are kept for history. When editing behavior, edit the latest version unless explicitly told otherwise. Two sections do say otherwise, both deliberately: `segmentation_checks/` keeps `error_analysis_v1.py` alongside `_v3.py` because the two flag different defects, and the `segmentation_corrections/` scripts `correction_v1`–`_v4` are not a version progression at all — each solves a different segmentation defect.
++```
++
++Both exceptions named, matching what L124/L125 and L129 already say.
++
++### D6 — L50 → L51, one sentence appended
++
++```
++BEFORE L50: ...the archived `_part1` is the obsolete first generation that emits only 4 columns (`x,y,t,size`) with no brightness/solidity and is incompatible with the rest of the pipeline.
++
++AFTER  L51: ...is incompatible with the rest of the pipeline. Archived variants are referred to throughout this file by their version suffix (`_v1`, `_v2`, `_ME_complete`, `_part1`, …) rather than by full filename; the files themselves are listed in `archive/`.
++```
++
++Per the ruling the seven names are **not** listed. They were verified against
++`git ls-files` anyway, since the prompt said to check the list before relying
++on it — see §4.
++
++### D3 — L117 → L118
++
++```
++BEFORE L117: - **Encoding fixes.** The old scripts write `μ` to the summary with the platform default encoding, which **crashes on Windows** (cp1252); and their `SPEED FILTER` progress line also contains `μ`, so on a Windows console that `print` raised `UnicodeEncodeError` inside the `try`, and the bare `except` logged every speed-filtered track as a failed track. The new code opens report/CSV files with `encoding='utf-8'` and keeps console output ASCII.
++
++AFTER  L118: - **Encoding fixes.** The old scripts write a mu character to the summary with the platform default encoding, which **crashes on Windows** (cp1252): they use U+03BC GREEK SMALL LETTER MU, which cp1252 cannot encode, rather than U+00B5 MICRO SIGN, which it can. Their `SPEED FILTER` progress line carries the same character, so on a Windows console that `print` raised `UnicodeEncodeError` inside the `try`, and the bare `except` logged every speed-filtered track as a failed track. The new code opens report/CSV files with `encoding='utf-8'` and keeps console output ASCII. *(Proposed, task 002: the two literal mu characters here were replaced by codepoint names rather than normalised to U+00B5, which would have made this paragraph false.)*
++```
++
++**This is the one place the instruction could not be followed literally.**
++Full reasoning in §3.
++
++### D5 — L129 → L130
++
++```
++BEFORE L129: ...They are **not a version progression** — each solves a *different* segmentation defect, so all three are kept:
++
++AFTER  L130: ...They are **not a version progression** — each solves a *different* segmentation defect, so all four are kept:
++```
++
++### Nothing else moved
++
++```
++measured: pre-edit lines  = 141
++measured: post-edit lines = 142
++measured: untouched pre-edit lines = 136
++measured: untouched post-edit lines = 136
++VERDICT: every line other than the six targets is byte-identical
++```
++
++---
++
++## 3. D3 — FOR YOUR RULING
++
++The prompt says to normalise all three micro/mu characters to U+00B5 and to
++report if doing so at L117 would alter its meaning. **It would, and the
++paragraph would become false.**
++
++Two measured facts settle it.
++
++**Fact 1 — cp1252 encodes U+00B5 and cannot encode U+03BC:**
++
++```
++measured: U+00B5 MICRO SIGN              cp1252 -> b'\xb5'   ENCODES FINE
++measured: U+03BC GREEK SMALL LETTER MU   cp1252 -> UnicodeEncodeError: character maps to <undefined>
++```
++
++**Fact 2 — the old scripts really do use U+03BC, in exactly the places L117
++describes:**
++
++```
++--- archive/final_kin_param_extraction_v3.py ---
++  U+00B5 MICRO SIGN (c2 b5) count: 2
++  U+03BC GREEK MU   (ce bc) count: 4
++--- archive/final_kin_param_extraction_v4.py ---
++  U+00B5 MICRO SIGN (c2 b5) count: 2
++  U+03BC GREEK MU   (ce bc) count: 4
++
++=== the actual lines containing a mu in v4 ===
++126:# Maximum speed to consider (in µm/s)
++127:MAX_SPEED = 60  # µm/s
++236:        f.write("Averages calculated for: Mean Velocity (μm/s), ...
++252:                    f.write(f"  Mean Velocity: ... μm/s\n")
++266:                f.write(f"  Mean Velocity: ... μm/s\n")
++381:                            print(f"    SPEED FILTER: ... (>{MAX_SPEED} μm/s)")
++```
++
++The U+00B5 occurrences are in comments (126–127); the U+03BC occurrences are
++the summary writes (236, 252, 266) and the `SPEED FILTER` progress line (381)
++— precisely the two things L117 blames for the crash.
++
++So L117's `μ` was **a faithful quotation, not an inconsistency**. Replacing it
++with `µ` would have produced a paragraph asserting that a character cp1252
++encodes without complaint crashes on cp1252.
++
++**What I did instead.** I removed both literal U+03BC characters — satisfying
++"no U+03BC remains in CLAUDE.md" — by naming the codepoints in prose rather
++than printing them, and said explicitly which one cp1252 cannot encode. The
++paragraph is now both mu-literal-free and true, and is more precise than
++before. It is **marked in the file as proposed**, in the trailing italic
++parenthetical quoted in §2.
++
++The two U+00B5 in the archived scripts' comments were **not** touched — this
++task must not modify any `.py` file.
++
++**Your options:** accept the reworded paragraph and drop the "(Proposed…)"
++marker in a follow-up; or revert L117 to the original literal `μ` and record
++instead that the mixed codepoints there are deliberate.
++
++Note also that L107 (now **L108**) was already U+00B5 MICRO SIGN, so D3
++required no change there:
++
++```
++measured: U+00B5 MICRO SIGN occurrences = 1 [108]
++```
++
++All of D3's actual work was at L117.
++
++---
++
++## 4. THE TWO LISTS THE PROMPT SAID TO VERIFY
++
++### D5 — the number of `correction_v*.py` files
++
++```
++=== D5: correction_v*.py files, by command ===
++  segmentation_corrections/correction_v1.py
++  segmentation_corrections/correction_v2.py
++  segmentation_corrections/correction_v3.py
++  segmentation_corrections/correction_v4.py
++count: 4
++```
++
++**Four.** "all three" was wrong; "all four" is correct.
++
++### D6 — the seven archive/ names
++
++```
++=== D6: tracked archive/ files ===
++  archive/blob_detection_ME_complete.py
++  archive/blob_detection_ME_part1.py
++  archive/blob_detection_v2.py
++  archive/blob_parameters_check_v1.py
++  archive/blob_parameters_check_v2.py
++  archive/error_analysis_v2.py
++  archive/final_kin_param_extraction_v2.py
++  archive/final_kin_param_extraction_v3.py
++  archive/final_kin_param_extraction_v4.py
++  archive/mhi_overlay_v1.py
++  archive/track_segmentation_ancient_v1.py
++  archive/track_segmentation_ancient_v2.py
++  archive/track_segmentation_v2.py
++  archive/track_segmentation_v3.py
++count: 14
++```
++
++All seven names the prompt lists exist and are tracked. They are the first
++seven rows above. Per the ruling they are **not** listed in CLAUDE.md.
++
++---
++
++## 5. NEW FILES
++
++`DECISIONS.md` and `GOTCHAS.md` were created in the repository root, LF
++endings, matching the existing reports.
++
++`DECISIONS.md` records exactly the four rulings the prompt lists — tests,
++`prompt_outputs/`, commit trailers, line endings — each with its reason. **No
++ruling was invented.** The trailer entry states in the file itself that it
++supersedes R5.
++
++`GOTCHAS.md` records exactly the two entries the prompt lists, each with what
++went wrong and what to do instead: the `git log --format=%B` output terminator,
++and `git commit --amend` rewriting the committer date.
++
++---
++
++## 6. VERIFICATION
++
++### Only the three intended files changed
++
++```
++     M CLAUDE.md
++    ?? DECISIONS.md
++    ?? GOTCHAS.md
++    ?? prompt_outputs/001-bootstrap-commit-2.md
++    ?? prompt_outputs/001-bootstrap-commit-3.md
++    ?? prompt_outputs/001-bootstrap-commit.md
++    ?? prompt_outputs/001-bootstrap-push.md
++
++measured: modified tracked files = ['CLAUDE.md']
++VERDICT: CLAUDE.md is the only modified tracked file
++measured: the two new files present as untracked = ['DECISIONS.md', 'GOTCHAS.md']
++VERDICT: DECISIONS.md and GOTCHAS.md are both new files
++measured: touched .py / .gitignore / .gitattributes = []
++VERDICT: no .py file, no .gitignore, no .gitattributes touched
++measured: changed .md outside prompt_outputs/ = ['CLAUDE.md', 'DECISIONS.md', 'GOTCHAS.md']
++VERDICT: exactly CLAUDE.md plus the two new files
++```
++
++The four `prompt_outputs/001-*` files are task 001's untracked reports, riding
++with this task's commit as instructed. They were not edited.
++
++### Line endings unchanged
++
++```
++measured: BEFORE  bytes= 27349  CRLF=141  bare-LF=0
++measured: AFTER   bytes= 28483  CRLF=142  bare-LF=0
++VERDICT: bare-LF count is 0 before and after - no line ending changed
++VERDICT: CRLF count 141 -> 142, +1 for the one inserted line
++```
++
++CLAUDE.md was and remains uniformly CRLF; the single CRLF increase is the
++POINTER bullet. The two new files are uniformly LF (`CRLF=0  bare-LF=66` and
++`CRLF=0  bare-LF=39`).
++
++### Character scan
++
++All three files: **valid UTF-8, no BOM, no control characters beyond tab, CR
++and LF.**
++
++```
++--- CLAUDE.md ---
++measured: decodes as UTF-8 = True (28483 bytes)
++measured: starts with UTF-8 BOM = False
++measured: control characters beyond tab/CR/LF = 0 []
++measured: distinct non-ASCII characters = 12
++    U+00B2  SUPERSCRIPT TWO                    x6   lines [70, 71, 97, 99, 99, 99]
++    U+00B5  MICRO SIGN                         x1   lines [108]
++    U+00D7  MULTIPLICATION SIGN                x5   lines [74, 74, 74, 140, 140]
++    U+2013  EN DASH                            x3   lines [49, 72, 72]
++    U+2014  EM DASH                            x71  lines [13, 32, 34, 34, 49, 51, 67, 67] ...(+63 more)
++    U+2026  HORIZONTAL ELLIPSIS                x7   lines [51, 70, 73, 77, 123, 132, 141]
++    U+2192  RIGHTWARDS ARROW                   x27  lines [69, 69, 69, 69, 70, 73, 74, 74] ...(+19 more)
++    U+2265  GREATER-THAN OR EQUAL TO           x2   lines [125, 132]
++    U+2500  BOX DRAWINGS LIGHT HORIZONTAL      x4   lines [59, 59, 60, 60]
++    U+2514  BOX DRAWINGS LIGHT UP AND RIGHT    x2   lines [59, 60]
++    U+26A0  WARNING SIGN                       x1   lines [77]
++    U+FE0F  VARIATION SELECTOR-16              x1   lines [77]
++measured: U+03BC GREEK SMALL LETTER MU occurrences = 0 []
++VERDICT: no U+03BC remains in CLAUDE.md
++
++--- DECISIONS.md ---
++measured: distinct non-ASCII characters = 2
++    U+2014  EM DASH                            x8   lines [11, 13, 21, 22, 27, 46, 54, 55]
++    U+2026  HORIZONTAL ELLIPSIS                x1   lines [51]
++
++--- GOTCHAS.md ---
++measured: distinct non-ASCII characters = 1
++    U+2014  EM DASH                            x3   lines [21, 22, 38]
++```
++
++**No U+03BC remains in CLAUDE.md.** One U+00B5 MICRO SIGN remains, at L108,
++which is the `µm/s` unit and is the character D3 normalises *to*.
++
++One incidental observation, not acted on: L77 carries U+26A0 WARNING SIGN
++followed by U+FE0F VARIATION SELECTOR-16 — the emoji presentation of the
++warning triangle. It is not a defect and is outside this task's scope.
++
++---
++
++## 7. ERRATA — R5 IS SUPERSEDED
++
++`prompt_outputs/001-bootstrap-gate.md` is committed and frozen, and was **not
++edited**. Recording here, as the working rules require:
++
++Its **ruling R5** — "every commit for this project keeps Claude Code's
++`Co-Authored-By` trailer and the `Claude-Session` trailer … COMMIT adds exactly
++those two; PUSH verifies them" — **is superseded** by the trailer ruling now in
++`DECISIONS.md`.
++
++**Why.** R5 required a `Claude-Session` value that cannot be obtained from
++inside a session: a session exposes only a UUID, the trailer URLs use a
++`session_01…` identifier, and nothing maps one to the other. That made R5
++unsatisfiable, and it blocked a commit outright — the whole of
++`prompt_outputs/001-bootstrap-commit.md` is the record of that stop. The
++replacement keeps `Co-Authored-By` alone, drops `Claude-Session`, and says
++PUSH does not check which model the trailer names.
++
++The gate report's §7.3, which flagged both values as undeterminable, was
++correct; only its §1 R5 statement is superseded.
++
++---
++
++## 8. README.md — REPEATS NONE OF THE FIVE (not edited)
++
++Checked by command, not edited:
++
++```
++--- D1: 'no test suite' / test-suite claims ---
++76:| `kinematics/test_stage7_structure.py` | `ROOT_DIRECTORY` | dataset root (structural regression test) |
++77:| `kinematics/demo_test_stage7.py` | — | none (self-contained demo, no paths to edit) |
++176:**Regression test.** `kinematics/test_stage7_structure.py` runs stage 7 against a real
++185:To sanity-check the test itself without any data, run `python demo_test_stage7.py` — it
++
++--- D2: highest-version rule ---
++  (no match)
++
++--- D3: mu characters ---
++  U+00B5 count: 1
++  U+03BC count: 0
++
++--- D5: 'all three' / correction counts ---
++79:| `segmentation_corrections/correction_v1.py`, `_v2.py`, `_v3.py` | `image_path` | a single track PNG (`t<N>.png`) |
++80:| `segmentation_corrections/correction_v4.py` | `output_file` (plus the hand-listed input PNGs in the script) | the merged-output PNG path |
++
++--- D6: archive mentions ---
++54:the table lists every path a user edits. (Archived scripts in `archive/` are superseded and
++174:`_v4.py`) have been validated against the new stage and moved to `archive/`.
++```
++
++| Defect | In README? | Evidence |
++|---|---|---|
++| D1 | **No** | README never claims there is no test suite; it documents both scripts correctly, including that the demo needs no data. |
++| D2 | **No** | No highest-version rule anywhere. |
++| D3 | **No** | One U+00B5, zero U+03BC — already consistent, and consistent with CLAUDE.md's surviving U+00B5. |
++| D5 | **No** | README lists `correction_v1/_v2/_v3` and `_v4` in separate rows and never counts them. |
++| D6 | **No** | Mentions `archive/` as a folder; names no archived script by a wrong name. |
++
++README repeats none of the five defects, so no follow-up is needed there.
++**README.md was not modified.**
++
++---
++
++## 9. DIFF ARTIFACT
++
++Regenerated with the prescribed command and verified by `cmp` against a
++regeneration written outside the repository.
++
++```
++=== generate artifact ===
++exit=0
++
++=== regenerate the same diff OUTSIDE the repo ===
++exit=0
++
++=== cmp artifact vs external regeneration ===
++cmp: EXIT 0 - identical
++
++=== artifact numstat ===
++6	5	CLAUDE.md
++66	0	DECISIONS.md
++39	0	GOTCHAS.md
++367	0	prompt_outputs/001-bootstrap-commit-2.md
++367	0	prompt_outputs/001-bootstrap-commit-3.md
++327	0	prompt_outputs/001-bootstrap-commit.md
++297	0	prompt_outputs/001-bootstrap-push.md
++444	0	prompt_outputs/002-docs-implement.md
++```
++
++The artifact and the regeneration written outside the repository are identical.
++
++**The usual self-reference caveat.** This report is inside the artifact while
++quoting the artifact's own numstat, so the two cannot both be final at the same
++instant. The block above was measured when the artifact was first generated;
++the artifact was then regenerated so it reflects this finished report, and
++`cmp` against a fresh outside regeneration was rerun and again returned exit 0.
++Only two rows move between those two measurements — this report and the
++artifact itself. The converged numstat is in the chat reply. `CLAUDE.md`,
++`DECISIONS.md`, `GOTCHAS.md` and the four carried task-001 reports are
++unaffected and their figures above are final.
++
++---
++
++## 10. POINTS FOR RULING
++
++1. **D3's rewording** — §3. The literal normalisation the prompt asked for would
++   have made the paragraph false. I removed both U+03BC by naming the codepoints
++   instead, and marked the paragraph as proposed in the file. Accept and drop
++   the marker, or revert to the literal `μ` and record the mixed codepoints as
++   deliberate.
++2. **No neighbouring line needed rewording.** Each of D1, D2, D5, D6 and POINTER
++   is self-contained; the surrounding passages stay coherent without further
++   edits. D3 is the sole case where keeping the passage true required changing
++   how the sentence is phrased, and it is the same line, not a neighbour.
++3. **The "(Proposed, task 002: …)" marker is publication-visible.** CLAUDE.md is
++   going toward publication, so this marker should be removed once ruled on.
++
++---
++
++## 11. UNREQUESTED — ACCEPT OR DROP
++
++Not implemented; listed for ruling.
++
++1. **Drop the "(Proposed…)" marker** from L118 once D3 is ruled on.
++2. **L77's emoji variation selector** (U+26A0 U+FE0F) could be plain U+26A0, or
++   the warning could be worded instead of drawn.
++3. **`.gitattributes`** remains task 004 per the line-endings decision.
++4. **Task 000's move**, still pending.
++5. **Nothing enforces the `Co-Authored-By` trailer** — no `commit.template`, no
++   hook, no `trailer.*` config. Now recorded in `DECISIONS.md`, but still
++   unenforced.
